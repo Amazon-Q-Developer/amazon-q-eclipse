@@ -59,4 +59,6 @@ public final class Constants {
     public static final String INLINE_CHAT_EXPIRED_AUTH_BODY = "Login status expired; please open Q plugin window to reauthenticate.";
     public static final String INLINE_CHAT_CONTEXT_ID = "org.eclipse.ui.inlineChatContext";
     public static final String INLINE_SUGGESTIONS_CONTEXT_ID = "org.eclipse.ui.suggestionsContext";
+    public static final String AMAZON_Q_CHANGELOG_URL = "https://github.com/aws/amazon-q-eclipse/blob/main/CHANGELOG.md";
+    public static final String AMAZON_Q_UPDATE_SITE_URL = "https://marketplace.eclipse.org/content/amazon-q";
 }

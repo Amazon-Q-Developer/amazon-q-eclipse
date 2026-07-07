@@ -22,6 +22,8 @@ public class AmazonQPreferenceInitializer extends AbstractPreferenceInitializer 
         store.setDefault(AmazonQPreferencePage.Q_DATA_SHARING, true);
         store.setDefault(AmazonQPreferencePage.HTTPS_PROXY, "");
         store.setDefault(AmazonQPreferencePage.CA_CERT, "");
+        store.setDefault(AmazonQPreferencePage.NOTIFICATIONS_OPT_IN, true);
+        store.setDefault(AmazonQPreferencePage.NOTIFICATIONS_ENDPOINT_OVERRIDE, "");
         store.addPropertyChangeListener(event -> {
             ThreadingUtils.executeAsyncTask(() -> {
                 Activator.getLspProvider().getAmazonQServer()
