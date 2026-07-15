@@ -26,7 +26,7 @@ import software.aws.toolkits.eclipse.amazonq.util.ToolkitNotification;
 /**
  * A toast notification that renders a severity icon, wrapped description, and N action buttons built from a hosted
  * notification's actions. INFO/WARNING keep the base auto-close timer; CRITICAL overrides {@link #scheduleAutoClose()}
- * to a no-op so it persists until the user dismisses it (the COE "reach the user" requirement).
+ * to a no-op so it persists until the user dismisses it, ensuring critical alerts reach the user.
  */
 public final class AmazonQNotificationPopup extends ToolkitNotification {
 
