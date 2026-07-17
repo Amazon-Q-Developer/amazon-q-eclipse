@@ -89,7 +89,7 @@ public final class NotificationsFetcher {
                     return Optional.empty();
                 }
                 if (status == HttpURLConnection.HTTP_OK) {
-                    return validateAndCache(response.body());
+                    return validateAndCache(response);
                 }
                 // 403/404 (file not deployed yet) and any other non-2xx: not an error condition, show nothing.
                 Activator.getLogger().info("No notifications available (HTTP " + status + ")");
@@ -159,19 +159,33 @@ public final class NotificationsFetcher {
         }
     }
 
-    private Optional<NotificationsList> validateAndCache(final String body) {
+    private Optional<NotificationsList> validateAndCache(final HttpResponse<String> response) {
+        final String body = response.body();
         final Optional<NotificationsList> parsed = validate(body);
         if (parsed.isEmpty()) {
             // Do not cache a bad body; keep any prior valid cache untouched.
             return getResourceFromCache();
         }
+        Path tmp = null;
         try {
-            final Path tmp = cachePath.resolveSibling(cachePath.getFileName() + ".tmp");
+            tmp = cachePath.resolveSibling(cachePath.getFileName() + ".tmp");
             Files.createDirectories(cachePath.getParent());
             Files.writeString(tmp, body);
             Files.move(tmp, cachePath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            // Persist the ETag ONLY after the cache write succeeds, so a later If-None-Match 304 can be honored by
+            // the on-disk cache. Storing the ETag without a matching cache would make 304s unserveable.
+            response.headers().firstValue("ETag")
+                    .ifPresent(etag -> Activator.getPluginStore().put(endpointUrl, etag));
         } catch (Exception e) {
             Activator.getLogger().warn("Failed to cache notifications file", e);
+            // Clean up a leaked temp file if the atomic move did not consume it.
+            if (tmp != null) {
+                try {
+                    Files.deleteIfExists(tmp);
+                } catch (Exception cleanupError) {
+                    Activator.getLogger().warn("Failed to delete temp notifications file", cleanupError);
+                }
+            }
         }
         return parsed;
     }

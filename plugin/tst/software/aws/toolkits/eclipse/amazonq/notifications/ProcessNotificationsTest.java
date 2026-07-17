@@ -38,7 +38,19 @@ public final class ProcessNotificationsTest {
     void setUp() {
         dismissalStore = mock(NotificationDismissalStore.class);
         shown = new ArrayList<>();
-        processor = new ProcessNotifications(dismissalStore, (id, n, c, actions) -> shown.add(id));
+        // Display that reports a successful render (completion=true), mirroring a real rendered toast.
+        processor = new ProcessNotifications(dismissalStore, (id, n, c, actions, completion) -> {
+            shown.add(id);
+            completion.accept(true);
+        });
+    }
+
+    /** Builds a processor whose display reports render failure, to exercise the retry/no-commit path. */
+    private ProcessNotifications processorWithFailingDisplay() {
+        return new ProcessNotifications(dismissalStore, (id, n, c, actions, completion) -> {
+            shown.add(id);
+            completion.accept(false);
+        });
     }
 
     private static NotificationData notif(final String id, final NotificationScheduleType type) {
@@ -114,5 +126,56 @@ public final class ProcessNotificationsTest {
     void emptyListIsNoOp() {
         processor.process(new NotificationsList(new NotificationsList.Schema("2.0"), List.of()));
         assertTrue(shown.isEmpty());
+    }
+
+    @Test
+    void startupFilteredOnFirstPollStillShowsOnceItQualifies() {
+        // Poll 1: the STARTUP notification is dismissed, so it is filtered out.
+        when(dismissalStore.isDismissed("startup1")).thenReturn(true);
+        final NotificationsList payload = list(notif("startup1", NotificationScheduleType.STARTUP));
+        processor.process(payload);
+        assertTrue(shown.isEmpty());
+
+        // Poll 2 (same session): it is no longer dismissed. The startup window must still be open, because it was
+        // consumed by an actual display, not merely by the first poll running.
+        shown.clear();
+        when(dismissalStore.isDismissed("startup1")).thenReturn(false);
+        processor.process(payload);
+        assertEquals(List.of("startup1"), shown);
+    }
+
+    @Test
+    void startupWindowConsumedOnlyAfterActualDisplay() {
+        final NotificationsList payload = list(notif("startup1", NotificationScheduleType.STARTUP));
+        processor.process(payload);
+        assertEquals(List.of("startup1"), shown);
+
+        // A DIFFERENT startup notification appearing later in the same session must NOT show: the window closed
+        // once startup1 rendered.
+        shown.clear();
+        processor.process(list(notif("startup2", NotificationScheduleType.STARTUP)));
+        assertTrue(shown.isEmpty());
+    }
+
+    @Test
+    void renderFailureIsRetriedOnNextPoll() {
+        final ProcessNotifications failing = processorWithFailingDisplay();
+        final NotificationsList payload = list(notif("emerg1", NotificationScheduleType.EMERGENCY));
+        failing.process(payload);
+        assertEquals(List.of("emerg1"), shown);
+
+        // Because rendering failed (completion=false), the id was un-marked, so the next poll retries it.
+        shown.clear();
+        failing.process(payload);
+        assertEquals(List.of("emerg1"), shown);
+    }
+
+    @Test
+    void nullElementInBatchIsSkipped() {
+        final List<NotificationData> withNull = new ArrayList<>();
+        withNull.add(null);
+        withNull.add(notif("emerg1", NotificationScheduleType.EMERGENCY));
+        processor.process(new NotificationsList(new NotificationsList.Schema("2.0"), withNull));
+        assertEquals(List.of("emerg1"), shown);
     }
 }

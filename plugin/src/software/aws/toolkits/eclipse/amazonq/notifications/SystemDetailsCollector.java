@@ -29,7 +29,9 @@ public final class SystemDetailsCollector {
     public static SystemDetails collect() {
         final Bundle pluginBundle = FrameworkUtil.getBundle(SystemDetailsCollector.class);
         final String pluginId = pluginBundle != null ? pluginBundle.getSymbolicName() : UNKNOWN;
-        final String pluginVersion = pluginBundle != null ? pluginBundle.getVersion().toString() : UNKNOWN;
+        // Use a clean major.minor.micro string (drop the OSGi qualifier, e.g. "2.7.4.202607161757") so the rules
+        // engine compares extension.version with semver, not lexical ordering. See resolveIdeVersion for the same.
+        final String pluginVersion = pluginBundle != null ? cleanVersion(pluginBundle.getVersion()) : UNKNOWN;
 
         return new SystemDetails(
                 "Local",
@@ -48,12 +50,37 @@ public final class SystemDetailsCollector {
         return pluginBundle != null ? pluginBundle.getSymbolicName() : UNKNOWN;
     }
 
+    /**
+     * Whether this is an unreleased/development build. Tycho replaces the {@code .qualifier} segment with a numeric
+     * build timestamp at release time, so a bundle whose qualifier is still the literal {@code "qualifier"} (PDE/dev
+     * launch) or contains {@code "snapshot"} is a development build that should not receive production notifications.
+     */
+    public static boolean isDevBuild() {
+        final Bundle pluginBundle = FrameworkUtil.getBundle(SystemDetailsCollector.class);
+        if (pluginBundle == null) {
+            return true;
+        }
+        final String qualifier = pluginBundle.getVersion().getQualifier();
+        if (qualifier == null || qualifier.isBlank()) {
+            return false;
+        }
+        final String q = qualifier.toLowerCase(java.util.Locale.ROOT);
+        return q.equals("qualifier") || q.contains("snapshot");
+    }
+
     private static String resolveIdeVersion() {
         final Bundle platform = Platform.getBundle(PLATFORM_BUNDLE_ID);
         if (platform == null) {
             return UNKNOWN;
         }
-        final Version v = platform.getVersion();
+        return cleanVersion(platform.getVersion());
+    }
+
+    /** Renders an OSGi {@link Version} as clean {@code major.minor.micro}, dropping the qualifier segment. */
+    private static String cleanVersion(final Version v) {
+        if (v == null) {
+            return UNKNOWN;
+        }
         return v.getMajor() + "." + v.getMinor() + "." + v.getMicro();
     }
 

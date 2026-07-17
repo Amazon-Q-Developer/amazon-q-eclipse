@@ -26,13 +26,18 @@ import software.aws.toolkits.eclipse.amazonq.plugin.Activator;
  */
 public final class ProcessNotifications {
 
-    /** Renders a notification that has passed all filtering. Injectable so tests can observe without SWT. */
+    /**
+     * Renders a notification that has passed all filtering. Injectable so tests can observe without SWT.
+     * The {@code completion} consumer must be invoked with {@code true} once the toast has actually rendered
+     * (so we only then commit telemetry + consume the startup window) or {@code false} if rendering was skipped
+     * or failed (so the notification can be retried on a later poll).
+     */
     public interface NotificationDisplay {
         void show(String id, NotificationData notification, LocalizedContent content,
-                List<NotificationAction> actions);
+                List<NotificationAction> actions, java.util.function.Consumer<Boolean> completion);
     }
 
-    private final AtomicBoolean isFirstPoll = new AtomicBoolean(true);
+    private final AtomicBoolean startupWindowOpen = new AtomicBoolean(true);
     private final Set<String> shownThisSession = ConcurrentHashMap.newKeySet();
     private final NotificationDismissalStore dismissalStore;
     private final NotificationDisplay display;
@@ -50,22 +55,34 @@ public final class ProcessNotifications {
         if (list == null || list.notifications() == null || list.notifications().isEmpty()) {
             return;
         }
-        final boolean isStartupPoll = isFirstPoll.compareAndSet(true, false);
+        // Whether STARTUP notifications are still eligible this session. Consumed only once a STARTUP notification
+        // actually survives all filters and is displayed (see processOne) — NOT merely because the first poll ran —
+        // so a STARTUP item that is dismissed/rule-filtered/blank on the first poll can still show on a later poll
+        // in the same session once it qualifies.
+        final boolean startupEligible = startupWindowOpen.get();
         final SystemDetails sys = SystemDetailsCollector.collect();
 
         for (final NotificationData notification : list.notifications()) {
-            processOne(notification, isStartupPoll, sys);
+            if (notification == null) {
+                continue;
+            }
+            try {
+                processOne(notification, startupEligible, sys);
+            } catch (Exception e) {
+                Activator.getLogger().warn("Skipping notification that failed to process: " + notification.id(), e);
+            }
         }
     }
 
-    private void processOne(final NotificationData notification, final boolean isStartupPoll, final SystemDetails sys) {
+    private void processOne(final NotificationData notification, final boolean startupEligible,
+            final SystemDetails sys) {
         final String id = notification.id();
         if (id == null) {
             return;
         }
         final boolean isStartup = notification.schedule() != null
                 && notification.schedule().type() == NotificationScheduleType.STARTUP;
-        if (isStartup && !isStartupPoll) {
+        if (isStartup && !startupEligible) {
             return;
         }
         if (dismissalStore.isDismissed(id)) {
@@ -91,24 +108,38 @@ public final class ProcessNotifications {
         // The explicit "Dismiss" button persists the dismissal so the notification does not reappear;
         // closing/auto-fading or clicking another action does NOT dismiss (an emergency re-shows next session).
         actions.add(new NotificationAction("Dismiss", () -> dismissalStore.dismiss(id)));
-        NotificationTelemetryProvider.emitShowNotification(id);
-        display.show(id, notification, content, actions);
+        final boolean isStartupNotification = isStartup;
+        // Telemetry + startup-window consumption are committed only after the toast actually renders (completion
+        // == true). If rendering is skipped/failed, un-mark it so a later poll can retry.
+        display.show(id, notification, content, actions, rendered -> {
+            if (Boolean.TRUE.equals(rendered)) {
+                NotificationTelemetryProvider.emitShowNotification(id);
+                if (isStartupNotification) {
+                    startupWindowOpen.set(false);
+                }
+            } else {
+                shownThisSession.remove(id);
+            }
+        });
     }
 
     private static void showToast(final String id, final NotificationData notification, final LocalizedContent content,
-            final List<NotificationAction> actions) {
+            final List<NotificationAction> actions, final java.util.function.Consumer<Boolean> completion) {
         final NotificationSeverity severity = NotificationSeverity.fromString(notification.severity());
         Activator.getLogger().info("Showing notification toast: " + id + " (severity=" + severity + ")");
         Display.getDefault().asyncExec(() -> {
             if (!PlatformUI.isWorkbenchRunning()) {
                 Activator.getLogger().info("Workbench not running; skipping notification toast: " + id);
+                completion.accept(false);
                 return;
             }
             try {
                 new AmazonQNotificationPopup(Display.getCurrent(), content.title(), content.description(), severity,
                         actions).open();
+                completion.accept(true);
             } catch (Exception e) {
                 Activator.getLogger().error("Failed to render notification toast: " + id, e);
+                completion.accept(false);
             }
         });
     }

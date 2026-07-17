@@ -159,11 +159,17 @@ public final class NotificationParsingTest {
     }
 
     @Test
-    void severityMapsExactCaseAndDefaultsToInfo() {
+    void severityMapsCaseInsensitivelyAndDefaultsToInfo() {
         assertEquals(NotificationSeverity.CRITICAL, NotificationSeverity.fromString("Critical"));
         assertEquals(NotificationSeverity.WARNING, NotificationSeverity.fromString("Warning"));
         assertEquals(NotificationSeverity.INFO, NotificationSeverity.fromString("Info"));
-        assertEquals(NotificationSeverity.INFO, NotificationSeverity.fromString("critical"));
+        // Case-insensitive: a mis-cased "critical" must NOT silently downgrade to INFO.
+        assertEquals(NotificationSeverity.CRITICAL, NotificationSeverity.fromString("critical"));
+        assertEquals(NotificationSeverity.CRITICAL, NotificationSeverity.fromString("CRITICAL"));
+        assertEquals(NotificationSeverity.WARNING, NotificationSeverity.fromString("warning"));
+        assertEquals(NotificationSeverity.INFO, NotificationSeverity.fromString("info"));
+        // Unrecognized and null still default to INFO.
+        assertEquals(NotificationSeverity.INFO, NotificationSeverity.fromString("bogus"));
         assertEquals(NotificationSeverity.INFO, NotificationSeverity.fromString(null));
     }
 

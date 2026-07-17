@@ -41,12 +41,20 @@ public final class NotificationPollingService {
         if (!NotificationPreferences.isNotificationsEnabled()) {
             return;
         }
+        // Development/unreleased builds must not receive production notifications. Allow an explicit endpoint
+        // override (preference or env var) so local/demo testing against a test endpoint still works.
+        if (SystemDetailsCollector.isDevBuild() && !NotificationPreferences.hasEndpointOverride()) {
+            Activator.getLogger().info("Notifications polling skipped: development build with no endpoint override");
+            return;
+        }
         if (!started.compareAndSet(false, true)) {
             return;
         }
         this.fetcher = new NotificationsFetcher(NotificationPreferences.resolveEndpoint());
         this.processor = new ProcessNotifications(new NotificationDismissalStore());
-        pollOnce();
+        // Schedule the first poll instead of running it inline so start() never blocks its caller (the shared
+        // startup worker thread) on network I/O.
+        scheduledPoll = schedulePoll(0L);
     }
 
     private void pollOnce() {
@@ -67,10 +75,20 @@ public final class NotificationPollingService {
         if (stopped || !NotificationPreferences.isNotificationsEnabled()) {
             return;
         }
+        scheduledPoll = schedulePoll(POLL_INTERVAL_MS);
+        // If stop() ran concurrently between the guard above and the assignment, cancel the future we just armed
+        // so a poll cannot fire after shutdown.
+        if (stopped && scheduledPoll != null) {
+            scheduledPoll.cancel(false);
+        }
+    }
+
+    private ScheduledFuture<?> schedulePoll(final long delayMs) {
         try {
-            scheduledPoll = (ScheduledFuture<?>) ThreadingUtils.scheduleAsyncTaskWithDelay(this::pollOnce, POLL_INTERVAL_MS);
+            return (ScheduledFuture<?>) ThreadingUtils.scheduleAsyncTaskWithDelay(this::pollOnce, delayMs);
         } catch (RejectedExecutionException e) {
             Activator.getLogger().info("Notifications polling stopped (worker pool shutting down)");
+            return null;
         }
     }
 

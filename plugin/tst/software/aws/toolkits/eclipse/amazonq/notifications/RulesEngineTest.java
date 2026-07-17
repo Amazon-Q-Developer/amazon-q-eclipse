@@ -118,6 +118,26 @@ public final class RulesEngineTest {
     }
 
     @Test
+    void extensionVersionEqualsMatchesCleanReleaseVersion() {
+        // SystemDetailsCollector sanitizes the OSGi Bundle-Version (e.g. "2.7.4.202607161757") to clean
+        // major.minor.micro "2.7.4" before it reaches the engine, so exact-equality targeting works.
+        final SystemDetails release = sys("2.7.4", new FeatureAuthDetails("BuilderId", "us-east-1", "Connected"));
+        final NotificationDisplayCondition eqCond = new NotificationDisplayCondition(null, null, null,
+                List.of(new ExtensionType(PLUGIN_ID, eq("2.7.4"))), null);
+        assertTrue(RulesEngine.displayNotification(notification(eqCond), release));
+
+        // Boundary operators compare with semver, not lexical: 2.7.4 <= 2.7.10 and 2.7.4 < 2.7.10.
+        final NotificationDisplayCondition ltCond = new NotificationDisplayCondition(null, null, null,
+                List.of(new ExtensionType(PLUGIN_ID, new NotificationExpression.LessThanCondition("2.7.10"))), null);
+        assertTrue(RulesEngine.displayNotification(notification(ltCond), release));
+
+        // A user already on the fixed version must NOT match "< 2.7.4".
+        final NotificationDisplayCondition fixedCond = new NotificationDisplayCondition(null, null, null,
+                List.of(new ExtensionType(PLUGIN_ID, new NotificationExpression.LessThanCondition("2.7.4"))), null);
+        assertFalse(RulesEngine.displayNotification(notification(fixedCond), release));
+    }
+
+    @Test
     void snapshotPluginVersionNeverShows() {
         final NotificationDisplayCondition cond = new NotificationDisplayCondition(null, null, null,
                 List.of(new ExtensionType(PLUGIN_ID, null)), null);

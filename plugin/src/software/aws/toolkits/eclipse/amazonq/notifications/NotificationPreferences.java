@@ -31,4 +31,18 @@ public final class NotificationPreferences {
         }
         return NotificationConstants.NOTIFICATIONS_ENDPOINT;
     }
+
+    /**
+     * Whether an explicit endpoint override (preference or environment variable) is set. Used to let a
+     * development/PDE build opt in to polling a test endpoint, which is otherwise suppressed on dev builds.
+     */
+    public static boolean hasEndpointOverride() {
+        final String pref = Activator.getDefault().getPreferenceStore()
+                .getString(AmazonQPreferencePage.NOTIFICATIONS_ENDPOINT_OVERRIDE);
+        if (pref != null && !pref.isBlank()) {
+            return true;
+        }
+        final String env = System.getenv(NotificationConstants.NOTIFICATIONS_ENDPOINT_ENV);
+        return env != null && !env.isBlank();
+    }
 }

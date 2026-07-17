@@ -47,12 +47,15 @@ public record NotificationData(
         WARNING,
         CRITICAL;
 
-        /** Maps the exact-case JSON value; any unrecognized or {@code null} value yields {@link #INFO}. */
+        /** Maps the JSON value case-insensitively; any unrecognized or {@code null} value yields {@link #INFO}. */
         public static NotificationSeverity fromString(final String value) {
-            if ("Critical".equals(value)) {
+            if (value == null) {
+                return INFO;
+            }
+            if ("Critical".equalsIgnoreCase(value)) {
                 return CRITICAL;
             }
-            if ("Warning".equals(value)) {
+            if ("Warning".equalsIgnoreCase(value)) {
                 return WARNING;
             }
             return INFO;
