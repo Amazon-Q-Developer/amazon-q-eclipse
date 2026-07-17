@@ -36,6 +36,8 @@ public final class NotificationsFetcher {
     private static final int TIMEOUT_SECONDS = 10;
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_BASE_DELAY_MS = 500L;
+    /** Upper bound on the notifications payload size (~1MB of JSON). Real payloads are a few KB. */
+    private static final int MAX_PAYLOAD_CHARS = 1_000_000;
     private static final ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.getInstance();
 
     private final String endpointUrl;
@@ -152,6 +154,13 @@ public final class NotificationsFetcher {
 
     private Optional<NotificationsList> validate(final String content) {
         if (content == null || content.isBlank()) {
+            return Optional.empty();
+        }
+        // Guard against an unexpectedly large payload (a mis-pointed endpoint, or a hijacked/oversized file) so a
+        // poll cannot buffer an arbitrary amount into memory + attempt to parse it.
+        if (content.length() > MAX_PAYLOAD_CHARS) {
+            Activator.getLogger().warn("Notifications payload exceeds " + MAX_PAYLOAD_CHARS
+                    + " chars (" + content.length() + "); ignoring");
             return Optional.empty();
         }
         try {

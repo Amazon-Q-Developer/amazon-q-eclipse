@@ -170,4 +170,27 @@ public final class RulesEngineTest {
                 List.of(new AuthxType("q", null, null, eq("NotConnected"), null)));
         assertTrue(RulesEngine.displayNotification(notification(cond), loggedOut));
     }
+
+    @Test
+    void nullActualValueDoesNotThrowAndIsNonMatch() {
+        // A null system value against ordering/equality operators must be a non-match, never an NPE.
+        assertFalse(RulesEngine.evaluateNotificationExpression(eq("x"), null));
+        assertFalse(RulesEngine.evaluateNotificationExpression(
+                new NotificationExpression.GreaterThanCondition("1.0"), null, true));
+        assertFalse(RulesEngine.evaluateNotificationExpression(
+                new NotificationExpression.LessThanCondition("1.0"), null, true));
+        // != against a null actual is a match (the actual is not equal to the expected value).
+        assertTrue(RulesEngine.evaluateNotificationExpression(
+                new NotificationExpression.NotEqualsCondition("x"), null));
+    }
+
+    @Test
+    void nullOsVersionWithOrderingConditionDoesNotThrow() {
+        final SystemDetails noOsVersion = new SystemDetails("Local", "aarch64", "Mac OS X", null, "Eclipse", "4.30.0",
+                Map.of(PLUGIN_ID, "1.70.0"), new FeatureAuthDetails("BuilderId", "us-east-1", "Connected"));
+        final NotificationDisplayCondition cond = new NotificationDisplayCondition(null,
+                new SystemType(null, new NotificationExpression.GreaterThanCondition("10.0")), null, null, null);
+        // Must evaluate to "does not match" rather than throwing.
+        assertFalse(RulesEngine.displayNotification(notification(cond), noOsVersion));
+    }
 }

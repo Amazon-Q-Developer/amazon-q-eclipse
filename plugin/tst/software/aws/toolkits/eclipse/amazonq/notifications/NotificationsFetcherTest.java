@@ -181,4 +181,18 @@ public final class NotificationsFetcherTest {
         // With a valid cache, a persistent network failure serves the cached payload rather than empty.
         assertTrue(fetcher().fetch().isPresent());
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void oversizedPayloadIsIgnored() throws Exception {
+        // A payload beyond the size cap must not be parsed or cached.
+        final StringBuilder huge = new StringBuilder("{ \"schema\": { \"version\": \"2.0\" }, \"notifications\": [");
+        while (huge.length() < 1_100_000) {
+            huge.append("{\"id\":\"x\",\"schedule\":{\"type\":\"Emergency\"},\"severity\":\"Info\"},");
+        }
+        huge.append("] }");
+        doReturn(response(200, huge.toString())).when(httpClient).send(any(HttpRequest.class), any());
+        assertTrue(fetcher().fetch().isEmpty());
+        assertFalse(Files.exists(cacheDir.resolve("notifications.json")));
+    }
 }

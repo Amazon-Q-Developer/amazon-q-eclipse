@@ -214,4 +214,45 @@ public final class NotificationParsingTest {
             """;
         assertThrows(Exception.class, () -> mapper.readValue(badJson, NotificationsList.class));
     }
+
+    @Test
+    void nullNotificationElementParsesAsNullEntry() throws Exception {
+        // A JSON null in the notifications array deserializes to a null element; ProcessNotifications must skip it
+        // (covered in ProcessNotificationsTest.nullElementInBatchIsSkipped) rather than aborting the batch.
+        NotificationsList list = mapper.readValue("""
+            { "schema": { "version": "2.0" }, "notifications": [ null,
+              { "id": "n1", "schedule": { "type": "Emergency" }, "severity": "Info",
+                "content": { "en-US": { "title": "t", "description": "d" } } } ] }
+            """, NotificationsList.class);
+        assertEquals(2, list.notifications().size());
+        assertNull(list.notifications().get(0));
+        assertEquals("n1", list.notifications().get(1).id());
+    }
+
+    @Test
+    void duplicateIdsBothParse() throws Exception {
+        // Duplicate ids are not rejected at parse time; in-session dedup is by id at display time.
+        NotificationsList list = mapper.readValue("""
+            { "schema": { "version": "2.0" }, "notifications": [
+              { "id": "dup", "schedule": { "type": "Emergency" }, "severity": "Info",
+                "content": { "en-US": { "title": "a", "description": "d" } } },
+              { "id": "dup", "schedule": { "type": "Emergency" }, "severity": "Critical",
+                "content": { "en-US": { "title": "b", "description": "d" } } } ] }
+            """, NotificationsList.class);
+        assertEquals(2, list.notifications().size());
+        assertEquals("dup", list.notifications().get(0).id());
+        assertEquals("dup", list.notifications().get(1).id());
+    }
+
+    @Test
+    void anyOfWithNonArrayValueIsRejected() {
+        // anyOf expects an array; a scalar must not silently deserialize into a valid expression.
+        String badJson = """
+            { "schema": { "version": "2.0" }, "notifications": [
+              { "id": "n1", "schedule": { "type": "Emergency" }, "severity": "Info",
+                "condition": { "os": { "type": { "anyOf": "notAnArray" } } },
+                "content": { "en-US": { "title": "t", "description": "d" } } } ] }
+            """;
+        assertThrows(Exception.class, () -> mapper.readValue(badJson, NotificationsList.class));
+    }
 }

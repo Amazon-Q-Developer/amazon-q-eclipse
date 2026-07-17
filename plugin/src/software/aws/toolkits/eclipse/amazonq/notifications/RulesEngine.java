@@ -104,6 +104,10 @@ public final class RulesEngine {
                     || evaluateNotificationExpression(feature.region(), auth.region());
             final boolean stateMatch = feature.connectionState() == null
                     || evaluateNotificationExpression(feature.connectionState(), auth.connectionState());
+            // NOTE: ssoScopes is intentionally not evaluated here — Eclipse's SystemDetailsCollector does not yet
+            // collect the connection's SSO scopes, so there is no actual value to compare against. Payloads should
+            // not rely on ssoScopes for Eclipse targeting until it is collected (tracked as a follow-up); an
+            // ssoScopes clause is currently a no-op rather than a match/mismatch.
             if (!(typeMatch && regionMatch && stateMatch)) {
                 return false;
             }
@@ -120,17 +124,19 @@ public final class RulesEngine {
     public static boolean evaluateNotificationExpression(final NotificationExpression expr, final String value,
             final boolean useSemver) {
         if (expr instanceof NotificationExpression.ComparisonCondition c) {
-            return c.value().equals(value);
+            // Anchor on the payload value so a null system value is a non-match, not an NPE.
+            return c.value() != null && c.value().equals(value);
         } else if (expr instanceof NotificationExpression.NotEqualsCondition c) {
-            return !c.value().equals(value);
+            return c.value() == null || !c.value().equals(value);
         } else if (expr instanceof NotificationExpression.GreaterThanCondition c) {
-            return compare(value, c.value(), useSemver) > 0;
+            // A null actual system value cannot satisfy an ordering constraint.
+            return value != null && compare(value, c.value(), useSemver) > 0;
         } else if (expr instanceof NotificationExpression.GreaterThanOrEqualsCondition c) {
-            return compare(value, c.value(), useSemver) >= 0;
+            return value != null && compare(value, c.value(), useSemver) >= 0;
         } else if (expr instanceof NotificationExpression.LessThanCondition c) {
-            return compare(value, c.value(), useSemver) < 0;
+            return value != null && compare(value, c.value(), useSemver) < 0;
         } else if (expr instanceof NotificationExpression.LessThanOrEqualsCondition c) {
-            return compare(value, c.value(), useSemver) <= 0;
+            return value != null && compare(value, c.value(), useSemver) <= 0;
         } else if (expr instanceof NotificationExpression.AnyOfCondition c) {
             return c.value().contains(value);
         } else if (expr instanceof NotificationExpression.NoneOfCondition c) {
