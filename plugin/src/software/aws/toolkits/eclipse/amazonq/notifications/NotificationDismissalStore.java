@@ -29,13 +29,14 @@ public final class NotificationDismissalStore {
     }
 
     public synchronized boolean isDismissed(final String id) {
-        return loadAndClean().getDismissedNotifications().stream().anyMatch(d -> d.getId().equals(id));
+        // Anchor equals() on the argument so a persisted entry with a null id cannot NPE and abort processing.
+        return loadAndClean().getDismissedNotifications().stream().anyMatch(d -> id.equals(d.getId()));
     }
 
     public synchronized void dismiss(final String id) {
         final NotificationDismissalConfiguration config = loadAndClean();
         final List<DismissedNotification> dismissed = config.getDismissedNotifications();
-        if (dismissed.stream().anyMatch(d -> d.getId().equals(id))) {
+        if (dismissed.stream().anyMatch(d -> id.equals(d.getId()))) {
             return;
         }
         dismissed.add(new DismissedNotification(id, Instant.now().toEpochMilli()));
@@ -44,15 +45,23 @@ public final class NotificationDismissalStore {
 
     private NotificationDismissalConfiguration loadAndClean() {
         NotificationDismissalConfiguration config;
+        boolean corrupt = false;
         try {
             config = pluginStore.getObject(NotificationConstants.DISMISSAL_STORAGE_KEY,
                     NotificationDismissalConfiguration.class);
         } catch (Exception e) {
             Activator.getLogger().warn("Corrupt notification dismissal state; resetting", e);
             config = null;
+            corrupt = true;
         }
         if (config == null || config.getDismissedNotifications() == null) {
-            return new NotificationDismissalConfiguration();
+            final NotificationDismissalConfiguration fresh = new NotificationDismissalConfiguration();
+            // If the stored bytes were corrupt, persist the reset once so we stop re-parsing (and re-warning on)
+            // the bad value every poll.
+            if (corrupt) {
+                pluginStore.putObject(NotificationConstants.DISMISSAL_STORAGE_KEY, fresh);
+            }
+            return fresh;
         }
         final Instant cutoff = Instant.now().minus(RETENTION);
         final boolean removedAny = config.getDismissedNotifications()

@@ -77,4 +77,31 @@ public final class NotificationDismissalStoreTest {
     void noStateReturnsNotDismissed() {
         assertFalse(new NotificationDismissalStore(pluginStore).isDismissed("anything"));
     }
+
+    @Test
+    void corruptStateIsResetAndPersistedOnRead() {
+        // Store bytes that are not a valid NotificationDismissalConfiguration JSON.
+        pluginStore.put(NotificationConstants.DISMISSAL_STORAGE_KEY, "}{ not valid json");
+        final NotificationDismissalStore store = new NotificationDismissalStore(pluginStore);
+        // Must not throw, and treats the corrupt state as empty.
+        assertFalse(store.isDismissed("n1"));
+        // The corrupt bytes must be overwritten with a valid empty config, so a fresh read no longer sees garbage.
+        final NotificationDismissalConfiguration repaired =
+                pluginStore.getObject(NotificationConstants.DISMISSAL_STORAGE_KEY, NotificationDismissalConfiguration.class);
+        assertTrue(repaired != null && repaired.getDismissedNotifications().isEmpty());
+        // And a subsequent dismiss still works after repair.
+        store.dismiss("n1");
+        assertTrue(store.isDismissed("n1"));
+    }
+
+    @Test
+    void nullIdEntryDoesNotThrow() {
+        final NotificationDismissalConfiguration config = new NotificationDismissalConfiguration();
+        config.setDismissedNotifications(new java.util.ArrayList<>(List.of(
+                new DismissedNotification(null, Instant.now().toEpochMilli()))));
+        pluginStore.putObject(NotificationConstants.DISMISSAL_STORAGE_KEY, config);
+        final NotificationDismissalStore store = new NotificationDismissalStore(pluginStore);
+        // A stored entry with a null id must not NPE when checking a real id.
+        assertFalse(store.isDismissed("n1"));
+    }
 }

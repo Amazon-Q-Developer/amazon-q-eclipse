@@ -30,9 +30,12 @@ import software.aws.toolkits.eclipse.amazonq.util.PluginUtils;
  */
 public final class NotificationsFetcher {
 
-    private static final int TIMEOUT_SECONDS = 30;
+    // A small hosted JSON over CloudFront returns in well under a second; a 10s timeout bounds how long a poll can
+    // occupy the shared worker thread while still tolerating a slow network. Worst case per poll is bounded to
+    // roughly MAX_RETRIES * TIMEOUT_SECONDS + total backoff.
+    private static final int TIMEOUT_SECONDS = 10;
     private static final int MAX_RETRIES = 3;
-    private static final long RETRY_BASE_DELAY_MS = 1000L;
+    private static final long RETRY_BASE_DELAY_MS = 500L;
     private static final ObjectMapper OBJECT_MAPPER = ObjectMapperFactory.getInstance();
 
     private final String endpointUrl;

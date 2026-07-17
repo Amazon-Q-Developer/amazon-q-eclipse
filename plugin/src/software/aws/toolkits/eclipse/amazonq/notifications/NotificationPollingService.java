@@ -6,59 +6,110 @@ package software.aws.toolkits.eclipse.amazonq.notifications;
 import java.time.Duration;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiFunction;
+import java.util.function.Supplier;
 
 import software.aws.toolkits.eclipse.amazonq.plugin.Activator;
 import software.aws.toolkits.eclipse.amazonq.util.ThreadingUtils;
 
 /**
- * App-level singleton that polls the notifications endpoint every 10 minutes on the shared worker pool, self-rescheduling
- * after each poll. The poll body is total (fetch never throws; the work is wrapped so an escaped error cannot cancel the
- * loop) and the re-arm happens in a {@code finally}. {@link #stop()} must be called early in {@code Activator.stop()} to
- * cancel the pending future and prevent a re-arm during teardown.
+ * App-level singleton that polls the notifications endpoint every 10 minutes on the shared worker pool,
+ * self-rescheduling after each poll. The poll body is total (fetch never throws) and the re-arm happens in a
+ * {@code finally}.
+ *
+ * <p>Lifecycle: {@link #start()} is called once at startup; {@link #shutdown()} must be called early in
+ * {@code Activator.stop()} to permanently cancel polling during teardown. {@link #onEnabledPreferenceChanged()} lets
+ * the notifications kill-switch pause/resume polling within a session without an IDE restart.
+ *
+ * <p>The scheduler and collaborators are injectable via a package-private constructor so unit tests can drive
+ * start/stop/reschedule deterministically without SWT, the network, or a real thread pool.
  */
 public final class NotificationPollingService {
 
     private static final NotificationPollingService INSTANCE = new NotificationPollingService();
     private static final long POLL_INTERVAL_MS = Duration.ofMinutes(10).toMillis();
 
-    private final AtomicBoolean started = new AtomicBoolean(false);
-    private volatile boolean stopped;
+    /** Abstracts the scheduler so tests can inject a deterministic one; returns a cancellable handle or null. */
+    interface PollScheduler {
+        ScheduledFuture<?> schedule(Runnable task, long delayMs);
+    }
+
+    private final Supplier<Boolean> enabledSupplier;
+    private final Supplier<Boolean> devBuildSupplier;
+    private final Supplier<Boolean> endpointOverrideSupplier;
+    private final Supplier<NotificationsFetcher> fetcherSupplier;
+    private final Supplier<ProcessNotifications> processorSupplier;
+    private final PollScheduler scheduler;
+
+    private volatile boolean shutdown;
+    private volatile boolean running;
     private volatile ScheduledFuture<?> scheduledPoll;
     private volatile NotificationsFetcher fetcher;
     private volatile ProcessNotifications processor;
 
     private NotificationPollingService() {
-        // singleton
+        this(
+            NotificationPreferences::isNotificationsEnabled,
+            SystemDetailsCollector::isDevBuild,
+            NotificationPreferences::hasEndpointOverride,
+            () -> new NotificationsFetcher(NotificationPreferences.resolveEndpoint()),
+            () -> new ProcessNotifications(new NotificationDismissalStore()),
+            defaultScheduler());
+    }
+
+    // Package-private for tests.
+    NotificationPollingService(final Supplier<Boolean> enabledSupplier, final Supplier<Boolean> devBuildSupplier,
+            final Supplier<Boolean> endpointOverrideSupplier, final Supplier<NotificationsFetcher> fetcherSupplier,
+            final Supplier<ProcessNotifications> processorSupplier, final PollScheduler scheduler) {
+        this.enabledSupplier = enabledSupplier;
+        this.devBuildSupplier = devBuildSupplier;
+        this.endpointOverrideSupplier = endpointOverrideSupplier;
+        this.fetcherSupplier = fetcherSupplier;
+        this.processorSupplier = processorSupplier;
+        this.scheduler = scheduler;
+    }
+
+    private static PollScheduler defaultScheduler() {
+        final BiFunction<Runnable, Long, ScheduledFuture<?>> sched =
+                (task, delay) -> (ScheduledFuture<?>) ThreadingUtils.scheduleAsyncTaskWithDelay(task, delay);
+        return (task, delayMs) -> {
+            try {
+                return sched.apply(task, delayMs);
+            } catch (RejectedExecutionException e) {
+                Activator.getLogger().info("Notifications polling stopped (worker pool shutting down)");
+                return null;
+            }
+        };
     }
 
     public static NotificationPollingService getInstance() {
         return INSTANCE;
     }
 
-    /** Starts polling once per app lifetime; no-op if the kill-switch is off or polling already started. */
-    public void start() {
-        if (!NotificationPreferences.isNotificationsEnabled()) {
+    /** Starts polling once per app lifetime; no-op if disabled, a dev build without override, or already running. */
+    public synchronized void start() {
+        if (shutdown || running) {
+            return;
+        }
+        if (!enabledSupplier.get()) {
             return;
         }
         // Development/unreleased builds must not receive production notifications. Allow an explicit endpoint
         // override (preference or env var) so local/demo testing against a test endpoint still works.
-        if (SystemDetailsCollector.isDevBuild() && !NotificationPreferences.hasEndpointOverride()) {
+        if (devBuildSupplier.get() && !endpointOverrideSupplier.get()) {
             Activator.getLogger().info("Notifications polling skipped: development build with no endpoint override");
             return;
         }
-        if (!started.compareAndSet(false, true)) {
-            return;
-        }
-        this.fetcher = new NotificationsFetcher(NotificationPreferences.resolveEndpoint());
-        this.processor = new ProcessNotifications(new NotificationDismissalStore());
+        running = true;
+        this.fetcher = fetcherSupplier.get();
+        this.processor = processorSupplier.get();
         // Schedule the first poll instead of running it inline so start() never blocks its caller (the shared
         // startup worker thread) on network I/O.
-        scheduledPoll = schedulePoll(0L);
+        scheduledPoll = scheduler.schedule(this::pollOnce, 0L);
     }
 
-    private void pollOnce() {
-        if (stopped || !NotificationPreferences.isNotificationsEnabled()) {
+    void pollOnce() {
+        if (shutdown || !running || !enabledSupplier.get()) {
             return;
         }
         try {
@@ -71,33 +122,50 @@ public final class NotificationPollingService {
         }
     }
 
-    private void reschedule() {
-        if (stopped || !NotificationPreferences.isNotificationsEnabled()) {
+    private synchronized void reschedule() {
+        if (shutdown || !running || !enabledSupplier.get()) {
             return;
         }
-        scheduledPoll = schedulePoll(POLL_INTERVAL_MS);
-        // If stop() ran concurrently between the guard above and the assignment, cancel the future we just armed
-        // so a poll cannot fire after shutdown.
-        if (stopped && scheduledPoll != null) {
+        scheduledPoll = scheduler.schedule(this::pollOnce, POLL_INTERVAL_MS);
+        // If shutdown ran concurrently between the guard above and the assignment, cancel what we just armed so a
+        // poll cannot fire after teardown.
+        if (shutdown && scheduledPoll != null) {
             scheduledPoll.cancel(false);
         }
     }
 
-    private ScheduledFuture<?> schedulePoll(final long delayMs) {
-        try {
-            return (ScheduledFuture<?>) ThreadingUtils.scheduleAsyncTaskWithDelay(this::pollOnce, delayMs);
-        } catch (RejectedExecutionException e) {
-            Activator.getLogger().info("Notifications polling stopped (worker pool shutting down)");
-            return null;
+    /**
+     * Reacts to a change in the notifications kill-switch preference: starts polling if it was turned on, or pauses
+     * (cancels the pending poll) if it was turned off. Unlike {@link #shutdown()}, this is reversible in-session.
+     */
+    public synchronized void onEnabledPreferenceChanged() {
+        if (shutdown) {
+            return;
+        }
+        if (enabledSupplier.get()) {
+            start();
+        } else {
+            pause();
         }
     }
 
-    /** Cancels the pending poll and prevents further rescheduling; safe to call during shutdown. */
-    public void stop() {
-        stopped = true;
+    private synchronized void pause() {
+        running = false;
+        cancelPending();
+    }
+
+    /** Permanently cancels polling for teardown; not resumable. */
+    public synchronized void shutdown() {
+        shutdown = true;
+        running = false;
+        cancelPending();
+    }
+
+    private void cancelPending() {
         final ScheduledFuture<?> current = scheduledPoll;
         if (current != null) {
             current.cancel(false);
+            scheduledPoll = null;
         }
     }
 }

@@ -64,7 +64,7 @@ public class Activator extends AbstractUIPlugin {
 
     @Override
     public final void stop(final BundleContext context) throws Exception {
-        NotificationPollingService.getInstance().stop();
+        NotificationPollingService.getInstance().shutdown();
         AmazonQBrowserProvider.getInstance().dispose();
         super.stop(context);
         plugin = null;
