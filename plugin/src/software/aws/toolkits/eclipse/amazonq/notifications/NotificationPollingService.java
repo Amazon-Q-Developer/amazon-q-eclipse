@@ -100,12 +100,18 @@ public final class NotificationPollingService {
             Activator.getLogger().info("Notifications polling skipped: development build with no endpoint override");
             return;
         }
-        running = true;
         this.fetcher = fetcherSupplier.get();
         this.processor = processorSupplier.get();
         // Schedule the first poll instead of running it inline so start() never blocks its caller (the shared
         // startup worker thread) on network I/O.
-        scheduledPoll = scheduler.schedule(this::pollOnce, 0L);
+        final ScheduledFuture<?> scheduled = scheduler.schedule(this::pollOnce, 0L);
+        if (scheduled == null) {
+            // The worker pool rejected the task (e.g. shutting down). Leave running=false so a later re-enable
+            // can retry rather than latching into a started-but-never-scheduled state.
+            return;
+        }
+        running = true;
+        scheduledPoll = scheduled;
     }
 
     void pollOnce() {
@@ -126,12 +132,9 @@ public final class NotificationPollingService {
         if (shutdown || !running || !enabledSupplier.get()) {
             return;
         }
+        // reschedule() and shutdown() are both synchronized on this monitor, so shutdown cannot interleave here;
+        // the entry guard above plus shutdown()'s cancelPending() are sufficient to stop post-teardown polls.
         scheduledPoll = scheduler.schedule(this::pollOnce, POLL_INTERVAL_MS);
-        // If shutdown ran concurrently between the guard above and the assignment, cancel what we just armed so a
-        // poll cannot fire after teardown.
-        if (shutdown && scheduledPoll != null) {
-            scheduledPoll.cancel(false);
-        }
     }
 
     /**

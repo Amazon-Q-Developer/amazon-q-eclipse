@@ -80,8 +80,10 @@ public final class NotificationDismissalStoreTest {
 
     @Test
     void corruptStateIsResetAndPersistedOnRead() {
-        // Store bytes that are not a valid NotificationDismissalConfiguration JSON.
-        pluginStore.put(NotificationConstants.DISMISSAL_STORAGE_KEY, "}{ not valid json");
+        // Persist a value of the WRONG shape via the same byte path getObject reads (putObject), so getObject's
+        // Gson.fromJson deterministically throws when coercing it to NotificationDismissalConfiguration. Using a
+        // bare String here serializes to a JSON string literal, which cannot deserialize into the config object.
+        pluginStore.putObject(NotificationConstants.DISMISSAL_STORAGE_KEY, "not-a-config-object");
         final NotificationDismissalStore store = new NotificationDismissalStore(pluginStore);
         // Must not throw, and treats the corrupt state as empty.
         assertFalse(store.isDismissed("n1"));

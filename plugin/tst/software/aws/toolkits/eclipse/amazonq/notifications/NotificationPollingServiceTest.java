@@ -4,7 +4,6 @@
 package software.aws.toolkits.eclipse.amazonq.notifications;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -166,6 +165,27 @@ public final class NotificationPollingServiceTest {
         s.shutdown();
         s.start();
         assertEquals(0, scheduler.scheduleCount);
-        assertFalse(devBuild.get());
+    }
+
+    @Test
+    void schedulerRejectionLeavesServiceRestartable() {
+        // A scheduler that rejects (returns null, as the real one does on RejectedExecutionException) must not
+        // latch the service into a started-but-never-scheduled state: a later start() can retry.
+        final AtomicBoolean reject = new AtomicBoolean(true);
+        final PollScheduler rejecting = (task, delayMs) -> {
+            if (reject.get()) {
+                return null;
+            }
+            return scheduler.schedule(task, delayMs);
+        };
+        final NotificationPollingService s = new NotificationPollingService(enabled::get, devBuild::get,
+                override::get, () -> fetcher, () -> processor, rejecting);
+        s.start();
+        assertEquals(0, scheduler.scheduleCount, "rejected schedule armed nothing");
+
+        // Pool recovers; a subsequent start() succeeds because running was never latched true.
+        reject.set(false);
+        s.start();
+        assertEquals(1, scheduler.scheduleCount, "start() retries after an earlier rejection");
     }
 }
