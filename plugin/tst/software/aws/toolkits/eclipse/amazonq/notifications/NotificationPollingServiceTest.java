@@ -54,6 +54,24 @@ public final class NotificationPollingServiceTest {
         }
     }
 
+    /**
+     * Scheduler that runs the task SYNCHRONOUSLY inside schedule() — reproducing a real ScheduledExecutorService
+     * executing a delay-0 first poll before start() returns. This is the race that silently no-op'd the first poll
+     * when running was set after scheduling.
+     */
+    private static final class InlineScheduler implements PollScheduler {
+        private int scheduleCount;
+
+        @Override
+        public ScheduledFuture<?> schedule(final Runnable task, final long delayMs) {
+            scheduleCount++;
+            if (delayMs == 0L) {
+                task.run();
+            }
+            return mock(ScheduledFuture.class);
+        }
+    }
+
     private AtomicBoolean enabled;
     private AtomicBoolean devBuild;
     private AtomicBoolean override;
@@ -165,6 +183,19 @@ public final class NotificationPollingServiceTest {
         s.shutdown();
         s.start();
         assertEquals(0, scheduler.scheduleCount);
+    }
+
+    @Test
+    void firstPollExecutingInlineAtScheduleTimeStillRuns() {
+        // Regression: the first poll is scheduled with delay 0; if the scheduler runs it synchronously (as a real
+        // pool thread can, before start() returns), pollOnce must see running==true and actually fetch — not
+        // silently no-op. Verify the poll reached the fetcher.
+        when(fetcher.fetch()).thenReturn(Optional.empty());
+        final InlineScheduler inline = new InlineScheduler();
+        final NotificationPollingService s = new NotificationPollingService(enabled::get, devBuild::get,
+                override::get, () -> fetcher, () -> processor, inline);
+        s.start();
+        org.mockito.Mockito.verify(fetcher).fetch();
     }
 
     @Test

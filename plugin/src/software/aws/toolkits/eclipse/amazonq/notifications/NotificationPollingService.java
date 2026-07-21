@@ -102,15 +102,20 @@ public final class NotificationPollingService {
         }
         this.fetcher = fetcherSupplier.get();
         this.processor = processorSupplier.get();
+        // Mark running BEFORE scheduling: the first poll is scheduled with delay 0, so on a real thread pool the
+        // poll can execute before this method returns. pollOnce() early-returns unless running==true, so if we set
+        // the flag after scheduling the very first poll can silently no-op (no fetch, no toast, no reschedule).
+        // running is volatile, so the poll thread observes this write. Roll it back if the scheduler rejects.
+        running = true;
         // Schedule the first poll instead of running it inline so start() never blocks its caller (the shared
         // startup worker thread) on network I/O.
         final ScheduledFuture<?> scheduled = scheduler.schedule(this::pollOnce, 0L);
         if (scheduled == null) {
-            // The worker pool rejected the task (e.g. shutting down). Leave running=false so a later re-enable
-            // can retry rather than latching into a started-but-never-scheduled state.
+            // The worker pool rejected the task (e.g. shutting down). Reset running so a later re-enable can retry
+            // rather than latching into a started-but-never-scheduled state.
+            running = false;
             return;
         }
-        running = true;
         scheduledPoll = scheduled;
     }
 
