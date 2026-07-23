@@ -2,7 +2,7 @@
 <feature
       id="software.aws.toolkits.eclipse.amazonq.feature"
       label="Amazon Q for Eclipse"
-      version="2.7.4.qualifier">
+      version="2.7.5.qualifier">
 
    <description>
       Amazon Q Developer helps users build faster across the entire software development lifecycle by providing tailored responses and code recommendations that conform to their team's internal libraries, proprietary algorithmic techniques, and enterprise code style.
@@ -198,6 +198,6 @@ https://github.com/aws/amazon-q-eclipse/blob/main/attribution.xml
          id="amazon-q-eclipse"
          download-size="11000"
          install-size="0"
-         version="2.7.4.qualifier"
+         version="2.7.5.qualifier"
          unpack="false"/>
 </feature>

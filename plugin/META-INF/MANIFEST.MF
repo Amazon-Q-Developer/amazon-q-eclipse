@@ -4,7 +4,7 @@ Bundle-Name: Amazon Q for Eclipse
 Bundle-Provider: Amazon Web Services
 Bundle-RequiredExecutionEnvironment: JavaSE-17
 Bundle-SymbolicName: amazon-q-eclipse;singleton:=true
-Bundle-Version: 2.7.4.qualifier
+Bundle-Version: 2.7.5.qualifier
 Automatic-Module-Name: amazon.q.eclipse
 Bundle-ActivationPolicy: lazy
 Bundle-Activator: software.aws.toolkits.eclipse.amazonq.plugin.Activator
