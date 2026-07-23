@@ -22,6 +22,7 @@ import software.aws.toolkits.eclipse.amazonq.util.CodeReferenceLoggingService;
 import software.aws.toolkits.eclipse.amazonq.util.DefaultCodeReferenceLoggingService;
 import software.aws.toolkits.eclipse.amazonq.util.LoggingService;
 import software.aws.toolkits.eclipse.amazonq.util.PluginLogger;
+import software.aws.toolkits.eclipse.amazonq.notifications.NotificationPollingService;
 import software.aws.toolkits.eclipse.amazonq.util.ThreadingUtils;
 import software.aws.toolkits.eclipse.amazonq.views.router.ViewRouter;
 import software.aws.toolkits.eclipse.workspace.WorkspaceChangeListener;
@@ -63,6 +64,7 @@ public class Activator extends AbstractUIPlugin {
 
     @Override
     public final void stop(final BundleContext context) throws Exception {
+        NotificationPollingService.getInstance().shutdown();
         AmazonQBrowserProvider.getInstance().dispose();
         super.stop(context);
         plugin = null;
