@@ -194,6 +194,7 @@
                                 com.fasterxml.jackson,
                                 com.nimbusds,jakarta.inject,
                                 commons-codec,
+                                commons-logging,
                                 org.apache.httpcomponents,
                                 org.reactivestreams,
                                 org.apache.maven,
