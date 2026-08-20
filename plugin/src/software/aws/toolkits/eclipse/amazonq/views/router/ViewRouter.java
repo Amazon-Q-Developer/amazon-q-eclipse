@@ -10,6 +10,7 @@ import software.aws.toolkits.eclipse.amazonq.broker.events.AmazonQLspState;
 import software.aws.toolkits.eclipse.amazonq.broker.events.AmazonQViewType;
 import software.aws.toolkits.eclipse.amazonq.broker.events.BrowserCompatibilityState;
 import software.aws.toolkits.eclipse.amazonq.broker.events.ChatWebViewAssetState;
+import software.aws.toolkits.eclipse.amazonq.broker.events.QDevAccessBlockedState;
 import software.aws.toolkits.eclipse.amazonq.broker.events.QDeveloperProfileState;
 import software.aws.toolkits.eclipse.amazonq.broker.events.ToolkitLoginWebViewAssetState;
 import software.aws.toolkits.eclipse.amazonq.broker.events.ViewRouterPluginState;
@@ -69,6 +70,11 @@ public final class ViewRouter implements EventObserver<ViewRouterPluginState> {
             builder.qDeveloperProfileStateObservable = Activator.getEventBroker()
                     .ofObservable(QDeveloperProfileState.class);
         }
+
+        if (builder.qDevAccessBlockedStateObservable == null) {
+            builder.qDevAccessBlockedStateObservable = Activator.getEventBroker()
+                    .ofObservable(QDevAccessBlockedState.class);
+        }
         /**
          * Combines all state observables into a single stream that emits a new PluginState
          * whenever any individual state changes. The combined stream:
@@ -78,7 +84,7 @@ public final class ViewRouter implements EventObserver<ViewRouterPluginState> {
         Observable.combineLatest(builder.authStateObservable, builder.lspStateObservable,
                 builder.browserCompatibilityStateObservable, builder.chatWebViewAssetStateObservable,
                 builder.toolkitLoginWebViewAssetStateObservable, builder.qDeveloperProfileStateObservable,
-                ViewRouterPluginState::new).observeOn(Schedulers.computation()).subscribe(this::onEvent);
+                builder.qDevAccessBlockedStateObservable, ViewRouterPluginState::new).observeOn(Schedulers.computation()).subscribe(this::onEvent);
     }
 
     public static Builder builder() {
@@ -117,6 +123,13 @@ public final class ViewRouter implements EventObserver<ViewRouterPluginState> {
         } else if (pluginState.chatWebViewAssetState() == ChatWebViewAssetState.DEPENDENCY_MISSING
                 || pluginState.toolkitLoginWebViewAssetState() == ToolkitLoginWebViewAssetState.DEPENDENCY_MISSING) {
             newActiveView = AmazonQViewType.CHAT_ASSET_MISSING_VIEW;
+        } else if (pluginState.qDevAccessBlockedState() == QDevAccessBlockedState.BLOCKED) {
+            /*
+             * Resolved ahead of the logged-out state on purpose. Reacting to the refusal signs the
+             * user out, so this state and the logged-out state are always true together; checking
+             * logged out first would show the ordinary login view and lose the explanation.
+             */
+            newActiveView = AmazonQViewType.Q_DEV_ACCESS_BLOCKED_VIEW;
         } else if (pluginState.authState().isLoggedOut()) {
             newActiveView = AmazonQViewType.TOOLKIT_LOGIN_VIEW;
         } else if (pluginState.authState().isExpired()) {
@@ -160,6 +173,7 @@ public final class ViewRouter implements EventObserver<ViewRouterPluginState> {
         private Observable<ChatWebViewAssetState> chatWebViewAssetStateObservable;
         private Observable<ToolkitLoginWebViewAssetState> toolkitLoginWebViewAssetStateObservable;
         private Observable<QDeveloperProfileState> qDeveloperProfileStateObservable;
+        private Observable<QDevAccessBlockedState> qDevAccessBlockedStateObservable;
 
         public Builder withAuthStateObservable(final Observable<AuthState> authStateObservable) {
             this.authStateObservable = authStateObservable;
@@ -192,6 +206,12 @@ public final class ViewRouter implements EventObserver<ViewRouterPluginState> {
         public Builder withQDeveloperProfileStateObservable(
                 final Observable<QDeveloperProfileState> qDeveloperProfileStateObservable) {
             this.qDeveloperProfileStateObservable = qDeveloperProfileStateObservable;
+            return this;
+        }
+
+        public Builder withQDevAccessBlockedStateObservable(
+                final Observable<QDevAccessBlockedState> qDevAccessBlockedStateObservable) {
+            this.qDevAccessBlockedStateObservable = qDevAccessBlockedStateObservable;
             return this;
         }
 

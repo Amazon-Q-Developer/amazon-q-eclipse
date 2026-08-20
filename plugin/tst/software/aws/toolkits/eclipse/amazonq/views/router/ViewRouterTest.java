@@ -25,6 +25,7 @@ import software.aws.toolkits.eclipse.amazonq.broker.events.AmazonQLspState;
 import software.aws.toolkits.eclipse.amazonq.broker.events.AmazonQViewType;
 import software.aws.toolkits.eclipse.amazonq.broker.events.BrowserCompatibilityState;
 import software.aws.toolkits.eclipse.amazonq.broker.events.ChatWebViewAssetState;
+import software.aws.toolkits.eclipse.amazonq.broker.events.QDevAccessBlockedState;
 import software.aws.toolkits.eclipse.amazonq.broker.events.QDeveloperProfileState;
 import software.aws.toolkits.eclipse.amazonq.broker.events.ToolkitLoginWebViewAssetState;
 import software.aws.toolkits.eclipse.amazonq.extensions.implementation.ActivatorStaticMockExtension;
@@ -41,6 +42,7 @@ public final class ViewRouterTest {
     private Observable<ChatWebViewAssetState> chatWebViewAssetStateObservable;
     private Observable<ToolkitLoginWebViewAssetState> toolkitLoginWebViewAssetStateObservable;
     private Observable<QDeveloperProfileState> qDeveloperProfileStateObservable;
+    private Observable<QDevAccessBlockedState> qDevAccessBlockedStateObservable;
 
     private ViewRouter viewRouter;
     private EventBroker eventBrokerMock;
@@ -61,6 +63,7 @@ public final class ViewRouterTest {
         chatWebViewAssetStateObservable = publishSubject.ofType(ChatWebViewAssetState.class);
         toolkitLoginWebViewAssetStateObservable = publishSubject.ofType(ToolkitLoginWebViewAssetState.class);
         qDeveloperProfileStateObservable = publishSubject.ofType(QDeveloperProfileState.class);
+        qDevAccessBlockedStateObservable = publishSubject.ofType(QDevAccessBlockedState.class);
 
         eventBrokerMock = activatorStaticMockExtension.getMock(EventBroker.class);
 
@@ -69,7 +72,8 @@ public final class ViewRouterTest {
                 .withBrowserCompatibilityStateObservable(browserCompatibilityStateObservable)
                 .withChatWebViewAssetStateObservable(chatWebViewAssetStateObservable)
                 .withToolkitLoginWebViewAssetStateObservable(toolkitLoginWebViewAssetStateObservable)
-                .withQDeveloperProfileStateObservable(qDeveloperProfileStateObservable).build();
+                .withQDeveloperProfileStateObservable(qDeveloperProfileStateObservable)
+                .withQDevAccessBlockedStateObservable(qDevAccessBlockedStateObservable).build();
     }
 
     @AfterEach
@@ -89,9 +93,46 @@ public final class ViewRouterTest {
         publishSubject.onNext(browserCompatibilityState);
         publishSubject.onNext(chatWebViewAssetState);
         publishSubject.onNext(toolkitLoginWebViewAssetState);
-        publishSubject.onNext(QDeveloperProfileState.AVAILABLE); // does not affect view selection
+        publishSubject.onNext(QDeveloperProfileState.AVAILABLE);
+        publishSubject.onNext(QDevAccessBlockedState.NOT_BLOCKED); // does not affect view selection
 
         verify(eventBrokerMock).post(AmazonQViewType.class, expectedActiveViewType);
+    }
+
+    /**
+     * Reacting to the refusal signs the user out, so BLOCKED and logged-out are always true
+     * together. The router must resolve BLOCKED first, otherwise the user lands on the ordinary
+     * login view and the explanation is lost.
+     */
+    @Test
+    void testAccessBlockedTakesPriorityOverLoggedOut() {
+        publishSubject.onNext(getAuthStateObject(AuthStateType.LOGGED_OUT));
+        publishSubject.onNext(AmazonQLspState.ACTIVE);
+        publishSubject.onNext(BrowserCompatibilityState.COMPATIBLE);
+        publishSubject.onNext(ChatWebViewAssetState.RESOLVED);
+        publishSubject.onNext(ToolkitLoginWebViewAssetState.RESOLVED);
+        publishSubject.onNext(QDeveloperProfileState.AVAILABLE);
+        publishSubject.onNext(QDevAccessBlockedState.BLOCKED);
+
+        verify(eventBrokerMock).post(AmazonQViewType.class, AmazonQViewType.Q_DEV_ACCESS_BLOCKED_VIEW);
+    }
+
+    /**
+     * Clearing the state is what returns the user to sign-in: they are already signed out, so the
+     * router should fall through to the login view.
+     */
+    @Test
+    void testClearingAccessBlockedReturnsToLoginView() {
+        publishSubject.onNext(getAuthStateObject(AuthStateType.LOGGED_OUT));
+        publishSubject.onNext(AmazonQLspState.ACTIVE);
+        publishSubject.onNext(BrowserCompatibilityState.COMPATIBLE);
+        publishSubject.onNext(ChatWebViewAssetState.RESOLVED);
+        publishSubject.onNext(ToolkitLoginWebViewAssetState.RESOLVED);
+        publishSubject.onNext(QDeveloperProfileState.AVAILABLE);
+        publishSubject.onNext(QDevAccessBlockedState.BLOCKED);
+        publishSubject.onNext(QDevAccessBlockedState.NOT_BLOCKED);
+
+        verify(eventBrokerMock).post(AmazonQViewType.class, AmazonQViewType.TOOLKIT_LOGIN_VIEW);
     }
 
     @Test
@@ -102,6 +143,7 @@ public final class ViewRouterTest {
         publishSubject.onNext(ChatWebViewAssetState.RESOLVED);
         publishSubject.onNext(ToolkitLoginWebViewAssetState.RESOLVED);
         publishSubject.onNext(QDeveloperProfileState.AVAILABLE);
+        publishSubject.onNext(QDevAccessBlockedState.NOT_BLOCKED);
 
         publishSubject.onNext(getAuthStateObject(AuthStateType.LOGGED_IN));
         publishSubject.onNext(AmazonQLspState.ACTIVE);
