@@ -4,6 +4,7 @@
 package software.aws.toolkits.eclipse.amazonq.views.router;
 
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 
 import java.util.stream.Stream;
@@ -11,6 +12,8 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import org.mockito.InOrder;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -132,7 +135,13 @@ public final class ViewRouterTest {
         publishSubject.onNext(QDevAccessBlockedState.BLOCKED);
         publishSubject.onNext(QDevAccessBlockedState.NOT_BLOCKED);
 
-        verify(eventBrokerMock).post(AmazonQViewType.class, AmazonQViewType.TOOLKIT_LOGIN_VIEW);
+        /*
+         * The router seeds NOT_BLOCKED via startWithItem, so the login view is posted once before
+         * BLOCKED arrives and once after it is cleared. Assert the sequence rather than a count.
+         */
+        InOrder inOrder = inOrder(eventBrokerMock);
+        inOrder.verify(eventBrokerMock).post(AmazonQViewType.class, AmazonQViewType.Q_DEV_ACCESS_BLOCKED_VIEW);
+        inOrder.verify(eventBrokerMock).post(AmazonQViewType.class, AmazonQViewType.TOOLKIT_LOGIN_VIEW);
     }
 
     @Test

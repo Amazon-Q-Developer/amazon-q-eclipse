@@ -81,10 +81,18 @@ public final class ViewRouter implements EventObserver<ViewRouterPluginState> {
          * - Waits for initial events from all observables before emitting
          * - Creates new PluginState from latest values of each observable upon update to any single stream
          */
+        /*
+         * combineLatest emits nothing until every source has emitted once. The other states are all
+         * seeded by their owning service during startup, but the blocked state has no owning
+         * service: it is only ever posted when the language server reports a refusal, which for
+         * almost every user is never. Without a seed value this stream would starve the combined
+         * stream and the router would never select a view -- the panel stays permanently blank.
+         */
         Observable.combineLatest(builder.authStateObservable, builder.lspStateObservable,
                 builder.browserCompatibilityStateObservable, builder.chatWebViewAssetStateObservable,
                 builder.toolkitLoginWebViewAssetStateObservable, builder.qDeveloperProfileStateObservable,
-                builder.qDevAccessBlockedStateObservable, ViewRouterPluginState::new).observeOn(Schedulers.computation()).subscribe(this::onEvent);
+                builder.qDevAccessBlockedStateObservable.startWithItem(QDevAccessBlockedState.NOT_BLOCKED),
+                ViewRouterPluginState::new).observeOn(Schedulers.computation()).subscribe(this::onEvent);
     }
 
     public static Builder builder() {
