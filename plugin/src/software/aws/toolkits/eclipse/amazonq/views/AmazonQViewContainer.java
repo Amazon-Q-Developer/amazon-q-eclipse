@@ -35,7 +35,8 @@ public final class AmazonQViewContainer extends ViewPart implements EventObserve
                 AmazonQViewType.RE_AUTHENTICATE_VIEW, new ReauthenticateView(),
                 AmazonQViewType.LSP_STARTUP_FAILED_VIEW, new LspStartUpFailedView(),
                 AmazonQViewType.CHAT_VIEW, new AmazonQChatWebview(),
-                AmazonQViewType.TOOLKIT_LOGIN_VIEW, new ToolkitLoginWebview());
+                AmazonQViewType.TOOLKIT_LOGIN_VIEW, new ToolkitLoginWebview(),
+                AmazonQViewType.Q_DEV_ACCESS_BLOCKED_VIEW, new QDevAccessBlockedView());
     }
 
     public AmazonQViewContainer() {
