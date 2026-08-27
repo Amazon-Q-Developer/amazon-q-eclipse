@@ -7,5 +7,5 @@ import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.AuthState;
 
 public record ViewRouterPluginState(AuthState authState, AmazonQLspState lspState, BrowserCompatibilityState browserCompatibilityState,
         ChatWebViewAssetState chatWebViewAssetState, ToolkitLoginWebViewAssetState toolkitLoginWebViewAssetState,
-        QDeveloperProfileState qDeveloperProfileState) {
+        QDeveloperProfileState qDeveloperProfileState, QDevAccessBlockedState qDevAccessBlockedState) {
 }
