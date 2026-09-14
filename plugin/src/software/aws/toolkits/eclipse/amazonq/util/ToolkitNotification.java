@@ -76,8 +76,10 @@ public class ToolkitNotification extends AbstractNotificationPopup {
         // Recompute height with the constrained width so wrapped text and buttons are accounted for
         int height = Math.max(getShell().computeSize(width, SWT.DEFAULT).y, MIN_HEIGHT);
         Point size = new Point(width, height);
-        // Calculate the position for the new notification
-        int x = clArea.x + clArea.width - size.x - PADDING_EDGE;
+        // Calculate the position for the new notification. Floor x at the client-area left edge so the
+        // shell can never be pushed off-screen to the right even if the width term is skewed (e.g. a DPI
+        // scaling mismatch on high-DPI/multi-monitor Windows).
+        int x = Math.max(clArea.x, clArea.x + clArea.width - size.x - PADDING_EDGE);
         int y = clArea.height + clArea.y - size.y - PADDING_EDGE;
         for (ToolkitNotification notification : activeNotifications) {
             if (!notification.getShell().isDisposed()) {
@@ -96,16 +98,18 @@ public class ToolkitNotification extends AbstractNotificationPopup {
 
     private void repositionNotifications() {
         Rectangle clArea = getPrimaryClientArea();
-        Point initialSize = getShell().computeSize(SWT.DEFAULT, SWT.DEFAULT);
-        int height = Math.max(initialSize.y, MIN_HEIGHT);
-        int width = Math.min(initialSize.x, MAX_WIDTH);
-        int x = clArea.x + clArea.width - width - PADDING_EDGE;
-        int y = clArea.height + clArea.y - height - PADDING_EDGE;
+        // Right-align and stack each surviving notification by ITS OWN size. Previously a single x/y was
+        // derived from the closing shell's width/height and applied to every survivor, so when a narrow
+        // toast closed while a wider one remained, the wider toast was placed too far right and its right
+        // edge hung off the screen. Mirror initializeBounds(): position each shell from its own getSize().
+        int y = clArea.y + clArea.height - PADDING_EDGE;
         for (ToolkitNotification notification : activeNotifications) {
             if (!notification.getShell().isDisposed()) {
                 Point size = notification.getShell().getSize();
+                int x = Math.max(clArea.x, clArea.x + clArea.width - size.x - PADDING_EDGE);
+                y -= size.y;
                 notification.getShell().setLocation(x, y);
-                y -= size.y + NOTIFICATIONS_GAP;
+                y -= NOTIFICATIONS_GAP;
             }
         }
     }

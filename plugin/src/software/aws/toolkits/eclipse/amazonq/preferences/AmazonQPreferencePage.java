@@ -40,6 +40,8 @@ public class AmazonQPreferencePage extends FieldEditorPreferencePage implements 
     public static final String Q_DATA_SHARING = "qDataSharing";
     public static final String HTTPS_PROXY = "httpsProxy";
     public static final String CA_CERT = "customCaCert";
+    public static final String NOTIFICATIONS_OPT_IN = "notificationsOptIn";
+    public static final String NOTIFICATIONS_ENDPOINT_OVERRIDE = "notificationsEndpointOverride";
 
     private Boolean isTelemetryOptInChecked;
     private Boolean isQDataSharingOptInChecked;
@@ -74,6 +76,8 @@ public class AmazonQPreferencePage extends FieldEditorPreferencePage implements 
         createTelemetryOptInField();
         createHorizontalSeparator();
         createQDataSharingField();
+        createHeading("Notifications");
+        createNotificationsOptInField();
         createHeading("Proxy Settings");
         createHttpsProxyField();
         createCaCertField();
@@ -152,6 +156,18 @@ public class AmazonQPreferencePage extends FieldEditorPreferencePage implements 
                 PluginUtils.openWebpage(event.text);
             }
         });
+    }
+
+    private void createNotificationsOptInField() {
+        Composite notificationsOptInComposite = new Composite(getFieldEditorParent(), SWT.NONE);
+        notificationsOptInComposite.setLayout(new GridLayout(2, false));
+        GridData notificationsOptInCompositeData = new GridData(SWT.FILL, SWT.CENTER, true, false);
+        notificationsOptInCompositeData.horizontalIndent = 20;
+        notificationsOptInComposite.setLayoutData(notificationsOptInCompositeData);
+
+        BooleanFieldEditor notificationsOptIn = new BooleanFieldEditor(NOTIFICATIONS_OPT_IN,
+                "Show Amazon Q notifications about known issues and available fixes", notificationsOptInComposite);
+        addField(notificationsOptIn);
     }
 
     private void createQDataSharingField() {

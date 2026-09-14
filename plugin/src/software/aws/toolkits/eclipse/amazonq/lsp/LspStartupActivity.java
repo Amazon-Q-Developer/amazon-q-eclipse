@@ -18,6 +18,7 @@ import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
 
 import software.aws.toolkits.eclipse.amazonq.broker.events.QDeveloperProfileState;
+import software.aws.toolkits.eclipse.amazonq.notifications.NotificationPollingService;
 import software.aws.toolkits.eclipse.amazonq.plugin.Activator;
 import software.aws.toolkits.eclipse.amazonq.providers.browser.AmazonQBrowserProvider;
 import software.aws.toolkits.eclipse.amazonq.telemetry.ToolkitTelemetryProvider;
@@ -83,6 +84,7 @@ public class LspStartupActivity implements IStartup {
             Display.getDefault().asyncExec(() -> attachAutoTriggerListenersIfApplicable());
             Display.getDefault().asyncExec(() -> showKiroSunsetNotification());
             checkForUpdates();
+            NotificationPollingService.getInstance().start();
         });
     }
 
