@@ -11,5 +11,7 @@ public final class PluginStoreKeys {
 
     public static final String CHAT_DISCLAIMER_ACKNOWLEDGED = "qchatDisclaimerAcknowledged";
     public static final String PAIR_PROGRAMMING_ACKNOWLEDGED = "qchatPairProgrammingAcknowledged";
+    public static final String CHAT_DEPRECATION_NOTICE_ACKNOWLEDGED = "qchatDeprecationNoticeAcknowledged";
+    public static final String EDITOR_DEPRECATION_BANNER_DISMISSED = "editorDeprecationBannerDismissed";
 
 }
