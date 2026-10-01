@@ -63,6 +63,9 @@ public class AmazonQLspServerBuilder extends Builder<AmazonQLspServer> {
         awsClientCapabilities.put("q", qOptions);
         Map<String, Object> window = new HashMap<>();
         window.put("showSaveFileDialog", true);
+        // Required. The runtime builds no notification router unless the client asks for one, and
+        // then drops aws/window/showNotification silently -- no error, no log.
+        window.put("notifications", true);
         awsClientCapabilities.put("window", window);
         awsInitOptions.put("awsClientCapabilities", awsClientCapabilities);
         initOptions.put("aws", awsInitOptions);
