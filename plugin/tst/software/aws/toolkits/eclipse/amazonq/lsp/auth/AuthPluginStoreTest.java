@@ -5,8 +5,13 @@ package software.aws.toolkits.eclipse.amazonq.lsp.auth;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+
+import java.time.Instant;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -117,11 +122,70 @@ public final class AuthPluginStoreTest {
     }
 
     @Test
+    public void testSetLoginTimestamp() {
+        Instant loginInstant = Instant.ofEpochMilli(1700000000000L);
+
+        authPluginStore.setLoginTimestamp("https://example.com", loginInstant);
+
+        verify(pluginStore).put(Constants.LOGIN_TIMESTAMP_START_URL_KEY, "https://example.com");
+        verify(pluginStore).put(Constants.LOGIN_TIMESTAMP_KEY, "1700000000000");
+    }
+
+    @Test
+    public void testSetLoginTimestampWithNullStartUrlDoesNotStore() {
+        authPluginStore.setLoginTimestamp(null, Instant.ofEpochMilli(1700000000000L));
+
+        verifyNoInteractions(pluginStore);
+    }
+
+    @Test
+    public void testGetLoginTimestampForSameStartUrl() {
+        when(pluginStore.get(Constants.LOGIN_TIMESTAMP_START_URL_KEY)).thenReturn("https://example.com");
+        when(pluginStore.get(Constants.LOGIN_TIMESTAMP_KEY)).thenReturn("1700000000000");
+
+        Optional<Instant> result = authPluginStore.getLoginTimestamp("https://example.com");
+
+        assertEquals(Optional.of(Instant.ofEpochMilli(1700000000000L)), result);
+    }
+
+    @Test
+    public void testGetLoginTimestampForDifferentStartUrlReturnsEmpty() {
+        when(pluginStore.get(Constants.LOGIN_TIMESTAMP_START_URL_KEY)).thenReturn("https://example.com");
+        when(pluginStore.get(Constants.LOGIN_TIMESTAMP_KEY)).thenReturn("1700000000000");
+
+        Optional<Instant> result = authPluginStore.getLoginTimestamp("https://other.example.com");
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    public void testGetLoginTimestampWhenNoTimestampStoredReturnsEmpty() {
+        when(pluginStore.get(Constants.LOGIN_TIMESTAMP_START_URL_KEY)).thenReturn(null);
+        when(pluginStore.get(Constants.LOGIN_TIMESTAMP_KEY)).thenReturn(null);
+
+        Optional<Instant> result = authPluginStore.getLoginTimestamp("https://example.com");
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    public void testGetLoginTimestampWhenTimestampNotANumberReturnsEmpty() {
+        when(pluginStore.get(Constants.LOGIN_TIMESTAMP_START_URL_KEY)).thenReturn("https://example.com");
+        when(pluginStore.get(Constants.LOGIN_TIMESTAMP_KEY)).thenReturn("not-a-timestamp");
+
+        Optional<Instant> result = authPluginStore.getLoginTimestamp("https://example.com");
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
     public void testClear() {
         authPluginStore.clear();
 
         verify(pluginStore).remove(Constants.LOGIN_TYPE_KEY);
         verify(pluginStore).remove(Constants.LOGIN_IDC_PARAMS_KEY);
+        verify(pluginStore).remove(Constants.LOGIN_TIMESTAMP_START_URL_KEY);
+        verify(pluginStore).remove(Constants.LOGIN_TIMESTAMP_KEY);
         verify(pluginStore).remove(Constants.SSO_TOKEN_ID);
     }
 }

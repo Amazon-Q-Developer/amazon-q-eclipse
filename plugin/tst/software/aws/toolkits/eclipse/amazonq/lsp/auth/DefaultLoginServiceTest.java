@@ -3,23 +3,32 @@
 
 package software.aws.toolkits.eclipse.amazonq.lsp.auth;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 
 import software.aws.toolkits.eclipse.amazonq.configuration.DefaultPluginStore;
@@ -37,9 +46,13 @@ import software.aws.toolkits.eclipse.amazonq.lsp.model.ConnectionMetadata;
 import software.aws.toolkits.eclipse.amazonq.lsp.model.UpdateCredentialsPayload;
 import software.aws.toolkits.eclipse.amazonq.plugin.Activator;
 import software.aws.toolkits.eclipse.amazonq.providers.lsp.LspProvider;
+import software.aws.toolkits.eclipse.amazonq.telemetry.AwsTelemetryProvider;
+import software.aws.toolkits.eclipse.amazonq.telemetry.AwsTelemetryProvider.BrowserLoginParams;
 import software.aws.toolkits.eclipse.amazonq.util.AuthUtil;
 import software.aws.toolkits.eclipse.amazonq.util.Constants;
 import software.aws.toolkits.eclipse.amazonq.util.LoggingService;
+import software.aws.toolkits.telemetry.TelemetryDefinitions.CredentialType;
+import software.aws.toolkits.telemetry.TelemetryDefinitions.Result;
 
 public final class DefaultLoginServiceTest {
 
@@ -57,6 +70,7 @@ public final class DefaultLoginServiceTest {
     private static GetSsoTokenResult expectedSsoToken;
     private static SsoToken ssoToken;
     private static MockedStatic<CustomizationUtil> mockedCustomizationUtil;
+    private static MockedStatic<AwsTelemetryProvider> mockedAwsTelemetryProvider;
 
     @BeforeEach
     public void setUp() {
@@ -72,6 +86,7 @@ public final class DefaultLoginServiceTest {
         mockedAuthUtil = mockStatic(AuthUtil.class);
         mockedActivator.when(Activator::getLspProvider).thenReturn(mockLspProvider);
         mockedCustomizationUtil = mockStatic(CustomizationUtil.class);
+        mockedAwsTelemetryProvider = mockStatic(AwsTelemetryProvider.class);
 
         updateCredentialsPayload = mock(UpdateCredentialsPayload.class);
         when(updateCredentialsPayload.data()).thenReturn("data");
@@ -99,6 +114,7 @@ public final class DefaultLoginServiceTest {
         mockedActivator.close();
         mockedAuthUtil.close();
         mockedCustomizationUtil.close();
+        mockedAwsTelemetryProvider.close();
     }
 
     @Test
@@ -417,6 +433,163 @@ public final class DefaultLoginServiceTest {
         verify(mockLoggingService).info("Successfully logged in");
     }
 
+    @Test
+    void processLoginEmitsBrowserLoginSucceededWithoutSessionDurationOnFirstLogin() throws Exception {
+        LoginType loginType = LoginType.BUILDER_ID;
+        LoginParams loginParams = createLoginParams(createLoginIdcParams("test-region", "test-url"));
+        mockedAuthUtil.when(() -> AuthUtil.getIssuerUrl(loginType, loginParams)).thenReturn(Constants.AWS_BUILDER_ID_URL);
+
+        when(mockedAuthTokenService.getSsoToken(loginType, loginParams, true))
+                .thenReturn(CompletableFuture.completedFuture(expectedSsoToken));
+        when(mockedAuthCredentialsService.updateTokenCredentials(expectedSsoToken.updateCredentialsParams()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        invokeProcessLogin(loginType, loginParams, true);
+
+        BrowserLoginParams params = captureBrowserLoginParams();
+        assertEquals(Constants.AWS_BUILDER_ID_URL, params.credentialStartUrl());
+        assertEquals(CredentialType.BEARER_TOKEN, params.credentialType());
+        assertEquals(Result.SUCCEEDED, params.result());
+        assertFalse(params.isReAuth());
+        assertNull(params.reason());
+        assertNull(params.sessionDuration());
+    }
+
+    @Test
+    void processLoginRecordsLoginTimestampOnSuccess() throws Exception {
+        LoginType loginType = LoginType.BUILDER_ID;
+        LoginParams loginParams = createLoginParams(createLoginIdcParams("test-region", "test-url"));
+        mockedAuthUtil.when(() -> AuthUtil.getIssuerUrl(loginType, loginParams)).thenReturn(Constants.AWS_BUILDER_ID_URL);
+
+        when(mockedAuthTokenService.getSsoToken(loginType, loginParams, true))
+                .thenReturn(CompletableFuture.completedFuture(expectedSsoToken));
+        when(mockedAuthCredentialsService.updateTokenCredentials(expectedSsoToken.updateCredentialsParams()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        invokeProcessLogin(loginType, loginParams, true);
+
+        verify(mockPluginStore).put(Constants.LOGIN_TIMESTAMP_START_URL_KEY, Constants.AWS_BUILDER_ID_URL);
+        verify(mockPluginStore).put(eq(Constants.LOGIN_TIMESTAMP_KEY), any(String.class));
+    }
+
+    @Test
+    void processLoginEmitsBrowserLoginSucceededWithSessionDurationWhenPreviousLoginRecorded() throws Exception {
+        LoginType loginType = LoginType.BUILDER_ID;
+        LoginParams loginParams = createLoginParams(createLoginIdcParams("test-region", "test-url"));
+        mockedAuthUtil.when(() -> AuthUtil.getIssuerUrl(loginType, loginParams)).thenReturn(Constants.AWS_BUILDER_ID_URL);
+        long previousLoginMillis = Instant.now().minus(Duration.ofDays(30)).toEpochMilli();
+        when(mockPluginStore.get(Constants.LOGIN_TIMESTAMP_START_URL_KEY)).thenReturn(Constants.AWS_BUILDER_ID_URL);
+        when(mockPluginStore.get(Constants.LOGIN_TIMESTAMP_KEY)).thenReturn(String.valueOf(previousLoginMillis));
+
+        when(mockedAuthTokenService.getSsoToken(loginType, loginParams, true))
+                .thenReturn(CompletableFuture.completedFuture(expectedSsoToken));
+        when(mockedAuthCredentialsService.updateTokenCredentials(expectedSsoToken.updateCredentialsParams()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        invokeProcessLogin(loginType, loginParams, true);
+
+        BrowserLoginParams params = captureBrowserLoginParams();
+        assertEquals(Result.SUCCEEDED, params.result());
+        assertNotNull(params.sessionDuration());
+        assertTrue(params.sessionDuration() >= Duration.ofDays(30).toMillis(),
+                "session duration should cover the recorded previous login");
+    }
+
+    @Test
+    void processLoginEmitsBrowserLoginWithIsReAuthWhenReAuthenticating() throws Exception {
+        LoginType loginType = LoginType.BUILDER_ID;
+        LoginParams loginParams = createLoginParams(createLoginIdcParams("test-region", "test-url"));
+        mockedAuthUtil.when(() -> AuthUtil.getIssuerUrl(loginType, loginParams)).thenReturn(Constants.AWS_BUILDER_ID_URL);
+
+        when(mockedAuthTokenService.getSsoToken(loginType, loginParams, true))
+                .thenReturn(CompletableFuture.completedFuture(expectedSsoToken));
+        when(mockedAuthCredentialsService.updateTokenCredentials(expectedSsoToken.updateCredentialsParams()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        invokeProcessLogin(loginType, loginParams, true, true);
+
+        BrowserLoginParams params = captureBrowserLoginParams();
+        assertTrue(params.isReAuth());
+        assertEquals(Result.SUCCEEDED, params.result());
+    }
+
+    @Test
+    void processLoginDoesNotEmitBrowserLoginOnSilentTokenRefresh() throws Exception {
+        // The re-authentication performed on start up passes loginOnInvalidToken=false: the cached token
+        // is refreshed without opening the browser, so it is neither a browser login nor a new session.
+        LoginType loginType = LoginType.BUILDER_ID;
+        LoginParams loginParams = createLoginParams(createLoginIdcParams("test-region", "test-url"));
+        mockedAuthUtil.when(() -> AuthUtil.getIssuerUrl(loginType, loginParams)).thenReturn(Constants.AWS_BUILDER_ID_URL);
+
+        when(mockedAuthTokenService.getSsoToken(loginType, loginParams, false))
+                .thenReturn(CompletableFuture.completedFuture(expectedSsoToken));
+        when(mockedAuthCredentialsService.updateTokenCredentials(expectedSsoToken.updateCredentialsParams()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        invokeProcessLogin(loginType, loginParams, false, true);
+
+        mockedAwsTelemetryProvider.verifyNoInteractions();
+        verify(mockPluginStore, never()).put(eq(Constants.LOGIN_TIMESTAMP_KEY), any(String.class));
+    }
+
+    @Test
+    void processLoginDoesNotEmitBrowserLoginFailedOnSilentTokenRefresh() {
+        LoginType loginType = LoginType.BUILDER_ID;
+        LoginParams loginParams = createLoginParams(createLoginIdcParams("test-region", "test-url"));
+        mockedAuthUtil.when(() -> AuthUtil.getIssuerUrl(loginType, loginParams)).thenReturn(Constants.AWS_BUILDER_ID_URL);
+
+        when(mockedAuthTokenService.getSsoToken(loginType, loginParams, false))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("token unavailable")));
+
+        CompletableFuture<Void> result = loginService.processLogin(loginType, loginParams, false, true);
+
+        assertThrows(ExecutionException.class, result::get);
+        mockedAwsTelemetryProvider.verifyNoInteractions();
+    }
+
+    @Test
+    void processLoginEmitsBrowserLoginFailedWithExceptionReason() {
+        LoginType loginType = LoginType.BUILDER_ID;
+        LoginParams loginParams = createLoginParams(createLoginIdcParams("test-region", "test-url"));
+        mockedAuthUtil.when(() -> AuthUtil.getIssuerUrl(loginType, loginParams)).thenReturn(Constants.AWS_BUILDER_ID_URL);
+
+        when(mockedAuthTokenService.getSsoToken(loginType, loginParams, true))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("token unavailable")));
+
+        CompletableFuture<Void> result = loginService.processLogin(loginType, loginParams, true, false);
+
+        assertThrows(ExecutionException.class, result::get);
+
+        BrowserLoginParams params = captureBrowserLoginParams();
+        assertEquals(Constants.AWS_BUILDER_ID_URL, params.credentialStartUrl());
+        assertEquals(Result.FAILED, params.result());
+        assertEquals("IllegalStateException", params.reason());
+        assertNull(params.sessionDuration());
+        verify(mockPluginStore, never()).put(eq(Constants.LOGIN_TIMESTAMP_KEY), any(String.class));
+    }
+
+    @Test
+    void processLoginDoesNotEmitBrowserLoginWhenStartUrlIsUnknown() throws Exception {
+        LoginType loginType = LoginType.BUILDER_ID;
+        LoginParams loginParams = createLoginParams(createLoginIdcParams("test-region", "test-url"));
+        mockedAuthUtil.when(() -> AuthUtil.getIssuerUrl(loginType, loginParams)).thenReturn(null);
+
+        when(mockedAuthTokenService.getSsoToken(loginType, loginParams, true))
+                .thenReturn(CompletableFuture.completedFuture(expectedSsoToken));
+        when(mockedAuthCredentialsService.updateTokenCredentials(expectedSsoToken.updateCredentialsParams()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+
+        invokeProcessLogin(loginType, loginParams, true);
+
+        mockedAwsTelemetryProvider.verifyNoInteractions();
+    }
+
+    private BrowserLoginParams captureBrowserLoginParams() {
+        ArgumentCaptor<BrowserLoginParams> captor = ArgumentCaptor.forClass(BrowserLoginParams.class);
+        mockedAwsTelemetryProvider.verify(() -> AwsTelemetryProvider.emitLoginWithBrowserEvent(captor.capture()));
+        return captor.getValue();
+    }
+
     private LoginParams createLoginParams(final LoginIdcParams idcParams) {
         LoginParams loginParams = mock(LoginParams.class);
         when(loginParams.getLoginIdcParams()).thenReturn(idcParams);
@@ -459,7 +632,12 @@ public final class DefaultLoginServiceTest {
 
     private void invokeProcessLogin(final LoginType loginType, final LoginParams loginParams,
             final boolean loginOnInvalidToken) throws Exception {
-        Object processLoginFuture = loginService.processLogin(loginType, loginParams, loginOnInvalidToken);
+        invokeProcessLogin(loginType, loginParams, loginOnInvalidToken, false);
+    }
+
+    private void invokeProcessLogin(final LoginType loginType, final LoginParams loginParams,
+            final boolean loginOnInvalidToken, final boolean isReAuth) throws Exception {
+        Object processLoginFuture = loginService.processLogin(loginType, loginParams, loginOnInvalidToken, isReAuth);
         assertTrue(processLoginFuture instanceof CompletableFuture<?>, "Return value should be CompletableFuture");
 
         CompletableFuture<?> future = (CompletableFuture<?>) processLoginFuture;
