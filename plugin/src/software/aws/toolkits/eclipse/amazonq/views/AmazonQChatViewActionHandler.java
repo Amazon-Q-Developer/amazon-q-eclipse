@@ -23,6 +23,7 @@ import software.aws.toolkits.eclipse.amazonq.chat.ChatAsyncResultManager;
 import software.aws.toolkits.eclipse.amazonq.chat.ChatCommunicationManager;
 import software.aws.toolkits.eclipse.amazonq.chat.ChatMessage;
 import software.aws.toolkits.eclipse.amazonq.chat.models.CursorState;
+import software.aws.toolkits.eclipse.amazonq.configuration.DeprecationAcknowledgmentStore;
 import software.aws.toolkits.eclipse.amazonq.configuration.PluginStoreKeys;
 import software.aws.toolkits.eclipse.amazonq.exception.AmazonQPluginException;
 import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.AuthFollowUpType;
@@ -36,9 +37,17 @@ import software.aws.toolkits.eclipse.amazonq.views.model.ParsedCommand;
 
 public class AmazonQChatViewActionHandler implements ViewActionHandler {
     private ChatCommunicationManager chatCommunicationManager;
+    private final ChatPromptAcknowledgmentHandler promptAcknowledgmentHandler;
 
     public AmazonQChatViewActionHandler(final ChatCommunicationManager chatCommunicationManager) {
+        this(chatCommunicationManager, new ChatPromptAcknowledgmentHandler(
+                Activator.getPluginStore(), DeprecationAcknowledgmentStore.getInstance()));
+    }
+
+    AmazonQChatViewActionHandler(final ChatCommunicationManager chatCommunicationManager,
+            final ChatPromptAcknowledgmentHandler promptAcknowledgmentHandler) {
         this.chatCommunicationManager = chatCommunicationManager;
+        this.promptAcknowledgmentHandler = promptAcknowledgmentHandler;
     }
 
     /*
@@ -120,10 +129,7 @@ public class AmazonQChatViewActionHandler implements ViewActionHandler {
                 @SuppressWarnings("unchecked")
                 Map<String, String> options = (Map<String, String>) message.getData();
                 String messageId = options.get("messageId");
-
-                if ("programmerModeCardId".equals(messageId)) {
-                    Activator.getPluginStore().put(PluginStoreKeys.PAIR_PROGRAMMING_ACKNOWLEDGED, "true");
-                }
+                promptAcknowledgmentHandler.acknowledge(messageId);
                 break;
             case GET_SERIALIZED_CHAT:
                 ChatAsyncResultManager.getInstance().setResult(parsedCommand.getRequestId(), message.getData());

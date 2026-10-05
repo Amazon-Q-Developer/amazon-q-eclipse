@@ -42,11 +42,13 @@ public final class Constants {
     public static final String TELEMETRY_NOTIFICATION_TITLE = "AWS IDE plugins telemetry";
     public static final String TELEMETRY_NOTIFICATION_BODY = "Usage metrics are collected by default. This can be changed in the \"Amazon Q\" section"
             + " of the IDE preferences.";
-    public static final String KIRO_SUNSET_NOTIFICATION_TITLE = "Amazon Q Developer end of support";
-    public static final String KIRO_SUNSET_NOTIFICATION_BODY = "Amazon Q Developer IDE plugins will reach end of support on April 30, 2027."
-            + " New accounts will no longer be available starting May 15, 2026";
-    public static final String KIRO_SUNSET_LEARN_MORE_URL = "https://aws.amazon.com/blogs/devops/amazon-q-developer-end-of-support-announcement/";
-    public static final String KIRO_SUNSET_NOTIFICATION_DISMISSED_KEY = "kiroSunsetNotificationDismissed";
+    public static final String DEPRECATION_NOTICE_TITLE = "Amazon Q Developer IDE plugins: end of support";
+    public static final String DEPRECATION_NOTICE_BODY = "On April 30, 2027, AWS will discontinue support for Amazon Q Developer IDE plugins. "
+            + "For capabilities similar to Amazon Q Developer IDE plugins, explore Kiro to access the latest models and features, including agentic coding, "
+            + "chat and MCP support.";
+    public static final String KIRO_URL = "https://kiro.dev";
+    public static final String DEPRECATION_NOTICE_LEARN_MORE_URL =
+            "https://aws.amazon.com/blogs/devops/amazon-q-developer-end-of-support-announcement/";
     public static final String RE_AUTHENTICATE_FAILURE_MESSAGE = "An error occurred while attempting to re-authenticate. Please try again.";
     public static final String AUTHENTICATE_FAILURE_MESSAGE = "An error occurred while attempting to authenticate. Please try again.";
     public static final String IDE_SSL_HANDSHAKE_TITLE = "SSL Handshake Error";
