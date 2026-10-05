@@ -11,6 +11,8 @@ import java.time.Instant;
 import java.util.Set;
 
 public final class ToolkitTelemetryProvider {
+    public static final String LOGIN_MODULE = "login";
+
     private static final Set<String> NON_PASSIVE = Set.of("ellipsesMenu", "statusBar", "shortcut");
 
     private ToolkitTelemetryProvider() {
@@ -59,6 +61,27 @@ public final class ToolkitTelemetryProvider {
                 .build();
         Activator.getTelemetryService().emitMetric(metadata);
     }
+
+    /**
+     * Reports that a module finished loading, or failed to load. The module names are shared with the
+     * other Amazon Q IDE plugins, so pass one of the constants declared on this class.
+     *
+     * @param module the module that finished loading
+     * @param result whether the module loaded
+     * @param reason a short reason code when the module failed to load, null otherwise
+     */
+    public static void emitDidLoadModuleEventMetric(final String module, final Result result, final String reason) {
+        MetricDatum metadata = ToolkitTelemetry.DidLoadModuleEvent()
+                .module(module)
+                .result(result)
+                .reason(reason)
+                .passive(true)
+                .createTime(Instant.now())
+                .value(1.0)
+                .build();
+        Activator.getTelemetryService().emitMetric(metadata);
+    }
+
     private static String mapModuleId(final String viewId) {
         String page = viewId.substring(viewId.lastIndexOf(".") + 1);
         switch (page) {

@@ -7,7 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
 
 import software.aws.toolkits.eclipse.amazonq.configuration.PluginStore;
@@ -28,7 +32,9 @@ import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.AuthStateType;
 import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.LoginIdcParams;
 import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.LoginParams;
 import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.LoginType;
+import software.aws.toolkits.eclipse.amazonq.telemetry.AuthTelemetryProvider;
 import software.aws.toolkits.eclipse.amazonq.util.Constants;
+import software.aws.toolkits.telemetry.TelemetryDefinitions.AuthStatus;
 
 class DefaultAuthStateManagerTest {
 
@@ -219,6 +225,69 @@ class DefaultAuthStateManagerTest {
         assertNull(state.loginParams());
         assertNull(state.ssoTokenId());
         assertNull(state.issuerUrl());
+    }
+
+    @Test
+    void syncAuthStateWithPluginStoreWithNoStoredCredentialsEmitsNotConnectedStartupUserState() {
+        when(pluginStore.get(Constants.LOGIN_TYPE_KEY)).thenReturn(LoginType.NONE.name());
+
+        try (MockedStatic<AuthTelemetryProvider> mockedAuthTelemetryProvider = mockStatic(AuthTelemetryProvider.class)) {
+            new DefaultAuthStateManager(pluginStore);
+
+            mockedAuthTelemetryProvider
+                    .verify(() -> AuthTelemetryProvider.emitUserStateOnStartupMetric(AuthStatus.NOT_CONNECTED, null));
+        }
+    }
+
+    @Test
+    void syncAuthStateWithPluginStoreWithStoredCredentialsDefersStartupUserStateUntilReAuthenticationResolves() {
+        when(pluginStore.get(Constants.LOGIN_TYPE_KEY)).thenReturn(LoginType.BUILDER_ID.name());
+        when(pluginStore.getObject(Constants.LOGIN_IDC_PARAMS_KEY, LoginIdcParams.class))
+                .thenReturn(loginParams.getLoginIdcParams());
+        when(pluginStore.get(Constants.SSO_TOKEN_ID)).thenReturn("ssoTokenId");
+
+        try (MockedStatic<AuthTelemetryProvider> mockedAuthTelemetryProvider = mockStatic(AuthTelemetryProvider.class)) {
+            DefaultAuthStateManager newManager = new DefaultAuthStateManager(pluginStore);
+
+            mockedAuthTelemetryProvider.verifyNoInteractions();
+
+            newManager.toLoggedIn(LoginType.BUILDER_ID, loginParams, "ssoTokenId");
+
+            mockedAuthTelemetryProvider.verify(() -> AuthTelemetryProvider
+                    .emitUserStateOnStartupMetric(AuthStatus.CONNECTED, Constants.AWS_BUILDER_ID_URL));
+        }
+    }
+
+    @Test
+    void startupUserStateReportsExpiredWhenRestoredSessionExpires() {
+        when(pluginStore.get(Constants.LOGIN_TYPE_KEY)).thenReturn(LoginType.BUILDER_ID.name());
+        when(pluginStore.getObject(Constants.LOGIN_IDC_PARAMS_KEY, LoginIdcParams.class))
+                .thenReturn(loginParams.getLoginIdcParams());
+        when(pluginStore.get(Constants.SSO_TOKEN_ID)).thenReturn("ssoTokenId");
+
+        try (MockedStatic<AuthTelemetryProvider> mockedAuthTelemetryProvider = mockStatic(AuthTelemetryProvider.class)) {
+            DefaultAuthStateManager newManager = new DefaultAuthStateManager(pluginStore);
+
+            newManager.toExpired();
+
+            mockedAuthTelemetryProvider.verify(() -> AuthTelemetryProvider
+                    .emitUserStateOnStartupMetric(AuthStatus.EXPIRED, Constants.AWS_BUILDER_ID_URL));
+        }
+    }
+
+    @Test
+    void startupUserStateIsEmittedOnlyOncePerSession() {
+        when(pluginStore.get(Constants.LOGIN_TYPE_KEY)).thenReturn(LoginType.NONE.name());
+
+        try (MockedStatic<AuthTelemetryProvider> mockedAuthTelemetryProvider = mockStatic(AuthTelemetryProvider.class)) {
+            DefaultAuthStateManager newManager = new DefaultAuthStateManager(pluginStore);
+
+            newManager.toLoggedIn(LoginType.BUILDER_ID, loginParams, "ssoTokenId");
+            newManager.toExpired();
+
+            mockedAuthTelemetryProvider.verify(
+                    () -> AuthTelemetryProvider.emitUserStateOnStartupMetric(any(AuthStatus.class), any()), times(1));
+        }
     }
 
     @Test

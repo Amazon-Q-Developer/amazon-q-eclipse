@@ -20,6 +20,7 @@ import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.LoginIdcParams;
 import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.LoginParams;
 import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.LoginType;
 import software.aws.toolkits.eclipse.amazonq.plugin.Activator;
+import software.aws.toolkits.eclipse.amazonq.telemetry.ToolkitTelemetryProvider;
 import software.aws.toolkits.eclipse.amazonq.util.AwsRegion;
 import software.aws.toolkits.eclipse.amazonq.util.JsonHandler;
 import software.aws.toolkits.eclipse.amazonq.util.PluginUtils;
@@ -28,6 +29,7 @@ import software.aws.toolkits.eclipse.amazonq.util.ThreadingUtils;
 import software.aws.toolkits.eclipse.amazonq.views.model.Command;
 import software.aws.toolkits.eclipse.amazonq.views.model.ParsedCommand;
 import software.aws.toolkits.eclipse.amazonq.views.model.QDeveloperProfile;
+import software.aws.toolkits.telemetry.TelemetryDefinitions.Result;
 
 public class LoginViewActionHandler implements ViewActionHandler {
 
@@ -118,6 +120,8 @@ public class LoginViewActionHandler implements ViewActionHandler {
             browser.execute("changeTheme(" + THEME_DETECTOR.isDarkTheme() + ");");
             browser.execute(String.format("ideClient.prepareUi(%s)", js));
             browser.execute("ideClient.updateAuthorization('')");
+            // The login webview reports onLoad once its assets have finished loading.
+            ToolkitTelemetryProvider.emitDidLoadModuleEventMetric(ToolkitTelemetryProvider.LOGIN_MODULE, Result.SUCCEEDED, null);
             break;
         case ON_SELECT_PROFILE:
             QDeveloperProfile developerProfile = JSON_HANDLER.convertObject(params, QDeveloperProfile.class);
