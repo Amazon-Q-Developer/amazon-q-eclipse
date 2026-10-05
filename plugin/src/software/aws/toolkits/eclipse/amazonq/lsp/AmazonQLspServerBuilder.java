@@ -64,9 +64,9 @@ public class AmazonQLspServerBuilder extends Builder<AmazonQLspServer> {
         // Give the server a stable identifier for this Eclipse workspace so chat history is
         // keyed per workspace rather than per set-of-open-projects (which changes between
         // sessions and causes previously open chat tabs not to be restored).
-        String workspaceFilePath = WorkspaceUtils.getWorkspaceFilePath();
-        if (StringUtils.isNotBlank(workspaceFilePath)) {
-            qOptions.put("workspaceFilePath", workspaceFilePath);
+        String workspaceRootPath = WorkspaceUtils.getWorkspaceRootPath();
+        if (workspaceRootPath != null) {
+            qOptions.put("workspaceFilePath", workspaceRootPath);
         }
         awsClientCapabilities.put("q", qOptions);
         Map<String, Object> window = new HashMap<>();
