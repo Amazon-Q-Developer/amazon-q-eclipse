@@ -24,6 +24,7 @@ import software.aws.toolkits.eclipse.amazonq.plugin.Activator;
 import software.aws.toolkits.eclipse.amazonq.telemetry.metadata.ClientMetadata;
 import software.aws.toolkits.eclipse.amazonq.telemetry.metadata.PluginClientMetadata;
 import software.aws.toolkits.eclipse.amazonq.util.AbapUtil;
+import software.aws.toolkits.eclipse.amazonq.util.WorkspaceUtils;
 
 public class AmazonQLspServerBuilder extends Builder<AmazonQLspServer> {
 
@@ -60,6 +61,13 @@ public class AmazonQLspServerBuilder extends Builder<AmazonQLspServer> {
         qOptions.put("mcp", true);
         qOptions.put("pinnedContextEnabled", true);
         qOptions.put("modelSelection", true);
+        // Give the server a stable identifier for this Eclipse workspace so chat history is
+        // keyed per workspace rather than per set-of-open-projects (which changes between
+        // sessions and causes previously open chat tabs not to be restored).
+        String workspaceFilePath = WorkspaceUtils.getWorkspaceFilePath();
+        if (StringUtils.isNotBlank(workspaceFilePath)) {
+            qOptions.put("workspaceFilePath", workspaceFilePath);
+        }
         awsClientCapabilities.put("q", qOptions);
         Map<String, Object> window = new HashMap<>();
         window.put("showSaveFileDialog", true);
