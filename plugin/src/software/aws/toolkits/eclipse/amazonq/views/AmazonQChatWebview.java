@@ -62,6 +62,11 @@ public class AmazonQChatWebview extends AmazonQView implements ChatUiRequestList
             });
 
             webViewAssetProvider.setContent(browser);
+
+            // Block F5/Refresh - the webview uses setText() with no backing URL,
+            // so browser refresh navigates to about:blank or file:/// causing a blank screen.
+            browser.addLocationListener(new RefreshBlockingLocationListener());
+            browser.addKeyListener(new RefreshBlockingKeyListener());
         }
 
         super.setupView(parent);
