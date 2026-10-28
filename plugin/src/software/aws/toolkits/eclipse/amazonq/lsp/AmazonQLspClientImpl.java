@@ -82,6 +82,8 @@ import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.SsoTokenChangedKind;
 import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.SsoTokenChangedParams;
 import software.aws.toolkits.eclipse.amazonq.lsp.model.ConnectionMetadata;
 import software.aws.toolkits.eclipse.amazonq.lsp.model.OpenFileDiffParams;
+import software.aws.toolkits.eclipse.amazonq.lsp.model.ShowNotificationParams;
+import software.aws.toolkits.eclipse.amazonq.broker.events.QDevAccessBlockedState;
 import software.aws.toolkits.eclipse.amazonq.lsp.model.OpenTabUiResponse;
 import software.aws.toolkits.eclipse.amazonq.lsp.model.SsoProfileData;
 import software.aws.toolkits.eclipse.amazonq.lsp.model.TelemetryEvent;
@@ -254,6 +256,37 @@ public class AmazonQLspClientImpl extends LanguageClientImpl implements AmazonQL
             }
         } catch (IllegalArgumentException ex) {
             Activator.getLogger().error("Error processing " + kind + " ssoTokenChanged notification", ex);
+        }
+    }
+
+    /**
+     * Handles the language server's generic notification channel. Today the only notification this
+     * plugin acts on is the report that Amazon Q Developer has refused this identity at sign-in.
+     *
+     * <p>Reacting means signing the user out and routing to an explanation. Sign-out happens here
+     * rather than in the view because the session is already useless: every Q request from this
+     * identity is refused, so leaving the user signed in would show a working-looking IDE that
+     * silently does nothing.
+     *
+     * <p>Never throws. This runs on the LSP message thread and is shared by every future
+     * notification, so a failure to classify one must not take the channel down.
+     */
+    @Override
+    public final void showNotification(final ShowNotificationParams params) {
+        try {
+            if (!QDevAccessBlockedNotification.isAccessBlocked(params)) {
+                return;
+            }
+
+            String message = params.content() == null ? null : params.content().text();
+            Activator.getLogger().info("Amazon Q Developer access is blocked for this identity: " + message);
+
+            // Publish before signing out. Sign-out makes the router re-evaluate, and the blocked
+            // state has to be in place by then or the router resolves the ordinary login view.
+            Activator.getEventBroker().post(QDevAccessBlockedState.class, QDevAccessBlockedState.BLOCKED);
+            Activator.getLoginService().logout();
+        } catch (Exception e) {
+            Activator.getLogger().error("Failed to handle showNotification", e);
         }
     }
 
