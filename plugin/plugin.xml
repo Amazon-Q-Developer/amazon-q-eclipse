@@ -132,6 +132,13 @@
               name="Amazon Q Code Reference"
               restorable="true">
         </view>
+        <view
+              category="amazonq"
+              class="software.aws.toolkits.eclipse.amazonq.views.DeprecationBannerView"
+              id="software.aws.toolkits.eclipse.amazonq.views.DeprecationBannerView"
+              name="Amazon Q Developer IDE plugins: end of support"
+              restorable="false">
+        </view>
     </extension>
     <extension point="org.eclipse.ui.activities">  
       <!-- These activities and activityPatternBindings prevent the view from showing up in the Show View menu. Logic exists that will filter these views out. -->
@@ -146,6 +153,11 @@
 	     isEqualityPattern="true"
 	     pattern="amazon-q-eclipse/software.aws.toolkits.eclipse.amazonq.views.AmazonQViewContainer">
 	  </activityPatternBinding>
+	  <activityPatternBinding
+	     activityId="software.aws.toolkits.eclipse.amazonq.activity.AmazonQViewContainer"
+	     isEqualityPattern="true"
+	     pattern="amazon-q-eclipse/software.aws.toolkits.eclipse.amazonq.views.DeprecationBannerView">
+	  </activityPatternBinding>
 	 </extension>
     <extension
         point="org.eclipse.ui.perspectiveExtensions">
@@ -156,6 +168,17 @@
                 id="software.aws.toolkits.eclipse.amazonq.views.AmazonQViewContainer"
                 relative="org.eclipse.ui.editorss"
                 relationship="right"
+                visible="false">
+            </view>
+            <view
+                closeable="false"
+                id="software.aws.toolkits.eclipse.amazonq.views.DeprecationBannerView"
+                moveable="false"
+                ratio="0.15"
+                relative="org.eclipse.ui.editorss"
+                relationship="top"
+                showTitle="false"
+                standalone="true"
                 visible="false">
             </view>
         </perspectiveExtension>
