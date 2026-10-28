@@ -2890,7 +2890,15 @@
                     "required": false
                 },
                 {
+                    "type": "reason",
+                    "required": false
+                },
+                {
                     "type": "result"
+                },
+                {
+                    "type": "sessionDuration",
+                    "required": false
                 },
                 {
                     "type": "source"
@@ -7057,6 +7065,37 @@
                 {
                     "type": "result",
                     "required": true
+                }
+            ],
+            "passive": true
+        },
+        {
+            "name": "toolkit_didLoadModule",
+            "description": "The module has loaded, i.e it has rendered/resolved/finished. You can use this metric by itself, OR after `toolkit_willOpenModule` + `traceId` to close the loop on an asynchronous operation.",
+            "metadata": [
+                {
+                    "type": "attempts",
+                    "required": false
+                },
+                {
+                    "type": "duration",
+                    "required": false
+                },
+                {
+                    "type": "module",
+                    "required": true
+                },
+                {
+                    "type": "reason",
+                    "required": false
+                },
+                {
+                    "type": "result",
+                    "required": true
+                },
+                {
+                    "type": "version",
+                    "required": false
                 }
             ],
             "passive": true
