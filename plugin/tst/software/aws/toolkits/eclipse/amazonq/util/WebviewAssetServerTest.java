@@ -21,6 +21,8 @@ import org.junit.jupiter.api.io.TempDir;
 final class WebviewAssetServerTest {
 
     private static final int HTTP_OK = 200;
+    private static final int HTTP_BAD_REQUEST = 400;
+    private static final int HTTP_FORBIDDEN = 403;
     private static final int HTTP_NOT_FOUND = 404;
 
     @Test
@@ -88,6 +90,79 @@ final class WebviewAssetServerTest {
             HttpResponse<String> response = get(server, "does-not-exist.js");
 
             assertEquals(HTTP_NOT_FOUND, response.statusCode());
+        } finally {
+            server.stop();
+        }
+    }
+
+    @Test
+    void rejectsPathTraversalWithForbidden(@TempDir final Path tempDir) throws Exception {
+        // Create a sibling directory with a secret file that should never be reachable.
+        Path sibling = tempDir.resolveSibling("secret");
+        Files.createDirectories(sibling);
+        Files.writeString(sibling.resolve("credentials.txt"), "TOP_SECRET");
+
+        // The base dir has a legitimate asset so the server starts normally.
+        Path baseDir = tempDir.resolve("webview");
+        Files.createDirectories(baseDir);
+        Files.writeString(baseDir.resolve("index.html"), "<html></html>");
+
+        WebviewAssetServer server = new WebviewAssetServer();
+        try {
+            assertTrue(server.resolve(baseDir.toString()));
+
+            // Attempt to traverse out of baseDir to the sibling secret file.
+            // Jetty 12 rejects path traversal sequences at the framework level (400) before
+            // the handler's explicit startsWith guard (403) is reached. Both layers prevent escape.
+            HttpResponse<String> response = get(server, "../secret/credentials.txt");
+
+            assertTrue(response.statusCode() == HTTP_BAD_REQUEST || response.statusCode() == HTTP_FORBIDDEN,
+                    "Path traversal must be rejected with 400 or 403, got: " + response.statusCode());
+            // Verify the secret content was NOT leaked in the response body.
+            assertTrue(!response.body().contains("TOP_SECRET"),
+                    "Path traversal must not leak file contents outside the base directory");
+        } finally {
+            server.stop();
+            // Clean up sibling directory (not managed by @TempDir).
+            Files.deleteIfExists(sibling.resolve("credentials.txt"));
+            Files.deleteIfExists(sibling);
+        }
+    }
+
+    @Test
+    void rejectsInvalidPathWithBadRequest(@TempDir final Path tempDir) throws Exception {
+        Files.writeString(tempDir.resolve("index.html"), "<html></html>");
+
+        WebviewAssetServer server = new WebviewAssetServer();
+        try {
+            assertTrue(server.resolve(tempDir.toString()));
+
+            // A percent-encoded null byte (%00) is valid in a URI but triggers InvalidPathException
+            // when decoded and resolved against the filesystem.
+            HttpResponse<String> response = get(server, "assets%00evil.js");
+
+            assertEquals(HTTP_BAD_REQUEST, response.statusCode());
+        } finally {
+            server.stop();
+        }
+    }
+
+    @Test
+    void servesDeeplyNestedAssetWithoutOverBlocking(@TempDir final Path tempDir) throws Exception {
+        // Ensure the traversal guard does not reject legitimate deeply-nested paths.
+        Path deep = tempDir.resolve("js").resolve("vendor").resolve("lib.js");
+        Files.createDirectories(deep.getParent());
+        String expectedContents = "var lib = 1;";
+        Files.writeString(deep, expectedContents);
+
+        WebviewAssetServer server = new WebviewAssetServer();
+        try {
+            assertTrue(server.resolve(tempDir.toString()));
+
+            HttpResponse<String> response = get(server, "js/vendor/lib.js");
+
+            assertEquals(HTTP_OK, response.statusCode());
+            assertEquals(expectedContents, response.body());
         } finally {
             server.stop();
         }
