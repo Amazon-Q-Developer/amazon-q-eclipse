@@ -27,10 +27,10 @@ import software.aws.toolkits.eclipse.amazonq.util.AutoTriggerDocumentListener;
 import software.aws.toolkits.eclipse.amazonq.util.AutoTriggerPartListener;
 import software.aws.toolkits.eclipse.amazonq.util.AutoTriggerTopLevelListener;
 import software.aws.toolkits.eclipse.amazonq.util.Constants;
-import software.aws.toolkits.eclipse.amazonq.util.KiroSunsetNotification;
 import software.aws.toolkits.eclipse.amazonq.util.ThreadingUtils;
 import software.aws.toolkits.eclipse.amazonq.util.ToolkitNotification;
 import software.aws.toolkits.eclipse.amazonq.util.UpdateUtils;
+import software.aws.toolkits.eclipse.amazonq.views.DeprecationBannerManager;
 import software.aws.toolkits.eclipse.amazonq.views.ViewConstants;
 import software.aws.toolkits.eclipse.amazonq.views.ViewVisibilityManager;
 import software.aws.toolkits.eclipse.amazonq.views.actions.AmazonQToolbarActions;
@@ -41,6 +41,8 @@ public class LspStartupActivity implements IStartup {
 
     @Override
     public final void earlyStartup() {
+        Display.getDefault().asyncExec(
+                () -> DeprecationBannerManager.getInstance().showOncePerSession());
         Job startupJob = new Job("Amazon Q Startup") {
             @Override
             protected IStatus run(final IProgressMonitor monitor) {
@@ -82,21 +84,9 @@ public class LspStartupActivity implements IStartup {
                 Display.getDefault().asyncExec(() -> launchWebview());
             }
             Display.getDefault().asyncExec(() -> attachAutoTriggerListenersIfApplicable());
-            Display.getDefault().asyncExec(() -> showKiroSunsetNotification());
             checkForUpdates();
             NotificationPollingService.getInstance().start();
         });
-    }
-
-    private void showKiroSunsetNotification() {
-        if (Activator.getPluginStore().get(Constants.KIRO_SUNSET_NOTIFICATION_DISMISSED_KEY) != null) {
-            return;
-        }
-        AbstractNotificationPopup notification = new KiroSunsetNotification(Display.getCurrent(),
-                Constants.KIRO_SUNSET_NOTIFICATION_TITLE,
-                Constants.KIRO_SUNSET_NOTIFICATION_BODY,
-                () -> Activator.getPluginStore().put(Constants.KIRO_SUNSET_NOTIFICATION_DISMISSED_KEY, "true"));
-        notification.open();
     }
 
     private void checkForUpdates() {

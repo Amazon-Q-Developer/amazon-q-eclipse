@@ -81,13 +81,39 @@ public final class AutoTriggerPartListener<T extends IDocumentListener & IAutoTr
     }
 
     private void attachDocumentListenerAndUpdateActiveDocument(final ITextEditor editor) {
-        var document = editor.getDocumentProvider().getDocument(editor.getEditorInput());
+        var document = resolveDocument(editor);
+        if (document == null) {
+            return;
+        }
         attachDocumentListenerAndUpdateActiveDocument(document);
     }
 
     private void attachDocumentListenerAndUpdateActiveDocument(final IDocument document) {
         document.addDocumentListener(docListener);
         setActiveDocument(document);
+    }
+
+    /**
+     * Resolves the document backing the given editor, or {@code null} when it
+     * cannot be resolved.
+     *
+     * <p>
+     * {@link ITextEditor#getDocumentProvider()} is an optional part of the Eclipse
+     * API and third party editors may return {@code null} from it. Dereferencing it
+     * unconditionally throws a {@link NullPointerException} out of the
+     * {@code IPartListener2} callback, which the workbench surfaces as a generic
+     * error dialog on every editor activation.
+     * </p>
+     */
+    private static IDocument resolveDocument(final ITextEditor editor) {
+        if (editor == null) {
+            return null;
+        }
+        var documentProvider = editor.getDocumentProvider();
+        if (documentProvider == null) {
+            return null;
+        }
+        return documentProvider.getDocument(editor.getEditorInput());
     }
 
     private void detachDocumentListenerFromLastActiveDocument() {
@@ -107,7 +133,7 @@ public final class AutoTriggerPartListener<T extends IDocumentListener & IAutoTr
             public void run() {
                 var editor = getActiveTextEditor();
                 if (editor != null) {
-                    var document = editor.getDocumentProvider().getDocument(editor.getEditorInput());
+                    var document = resolveDocument(editor);
                     if (document == null) {
                         Display.getDefault().timerExec(1000, this);
                         return;

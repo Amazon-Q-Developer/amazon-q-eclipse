@@ -16,6 +16,7 @@ import software.aws.toolkits.eclipse.amazonq.chat.models.ShowSaveFileDialogResul
 import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.SsoTokenChangedParams;
 import software.aws.toolkits.eclipse.amazonq.lsp.model.ConnectionMetadata;
 import software.aws.toolkits.eclipse.amazonq.lsp.model.OpenFileDiffParams;
+import software.aws.toolkits.eclipse.amazonq.lsp.model.ShowNotificationParams;
 
 public interface AmazonQLspClient extends LanguageClient {
 
@@ -60,6 +61,9 @@ public interface AmazonQLspClient extends LanguageClient {
 
     @JsonNotification("aws/didCreateDirectory")
     void didCreateDirectory(Object params);
+
+    @JsonNotification("aws/window/showNotification")
+    void showNotification(ShowNotificationParams params);
 
     @JsonNotification("aws/chat/sendPinnedContext")
     void sendPinnedContext(Object params);
