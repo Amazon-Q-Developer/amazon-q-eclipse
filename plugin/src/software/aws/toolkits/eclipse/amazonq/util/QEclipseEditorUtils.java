@@ -76,6 +76,27 @@ public final class QEclipseEditorUtils {
         return textEditor.getSelectionProvider().getSelection();
     }
 
+    /**
+     * Resolves the document backing the given editor, or {@code null} when it
+     * cannot be resolved.
+     *
+     * <p>
+     * {@link ITextEditor#getDocumentProvider()} is an optional part of the Eclipse
+     * API: third party editors may return {@code null} from it. Callers must
+     * therefore treat both the provider and the document it returns as nullable.
+     * </p>
+     */
+    private static IDocument getDocument(final ITextEditor editor) {
+        if (editor == null) {
+            return null;
+        }
+        var documentProvider = editor.getDocumentProvider();
+        if (documentProvider == null) {
+            return null;
+        }
+        return documentProvider.getDocument(editor.getEditorInput());
+    }
+
     private static ITextEditor asTextEditor(final IEditorPart editorPart) {
         if (editorPart instanceof ITextEditor) {
             return (ITextEditor) editorPart;
@@ -194,7 +215,10 @@ public final class QEclipseEditorUtils {
             return Optional.empty();
         }
         ISelection selection = getSelection(editor);
-        var document = editor.getDocumentProvider().getDocument(editor.getEditorInput());
+        var document = getDocument(editor);
+        if (document == null) {
+            return Optional.empty();
+        }
         if (selection instanceof ITextSelection textSelection) {
             try {
                 int startOffset = textSelection.getOffset();
@@ -232,7 +256,10 @@ public final class QEclipseEditorUtils {
         }
 
         var selection = editor.getSelectionProvider().getSelection();
-        var document = editor.getDocumentProvider().getDocument(editor.getEditorInput());
+        var document = getDocument(editor);
+        if (document == null) {
+            return Optional.empty();
+        }
         if (selection instanceof ITextSelection textSelection) {
             try {
                 int startOffset = textSelection.getOffset();
