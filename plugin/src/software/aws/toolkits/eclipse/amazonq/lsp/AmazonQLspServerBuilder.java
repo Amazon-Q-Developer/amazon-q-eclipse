@@ -58,6 +58,9 @@ public class AmazonQLspServerBuilder extends Builder<AmazonQLspServer> {
         qOptions.put("developerProfiles", true);
         qOptions.put("customizationsWithMetadata", true);
         qOptions.put("mcp", true);
+        // Eclipse has no workspace trust decision, so the language server asks once per folder
+        // before starting local MCP servers there.
+        qOptions.put("workspaceTrust", "prompt");
         qOptions.put("pinnedContextEnabled", true);
         qOptions.put("modelSelection", true);
         awsClientCapabilities.put("q", qOptions);
