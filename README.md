@@ -1,5 +1,12 @@
 ## Amazon Q for Eclipse
 
+> [!IMPORTANT]
+> **Amazon Q Developer IDE plugins: end of support**
+>
+> On April 30, 2027, AWS will discontinue support for Amazon Q Developer IDE plugins. For capabilities similar to Amazon Q Developer IDE plugins, [explore Kiro](https://kiro.dev) to access the latest models and features, including agentic coding, chat and MCP support.
+>
+> [Learn more](https://aws.amazon.com/blogs/devops/amazon-q-developer-end-of-support-announcement/)
+
 Amazon Q Developer is an advanced AI-powered coding assistant designed to enhance developer productivity and streamline software development processes.
 
 ### Key Features
