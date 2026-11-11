@@ -16,7 +16,7 @@ import org.eclipse.swt.browser.BrowserFunction;
 import software.aws.toolkits.eclipse.amazonq.broker.events.ChatWebViewAssetState;
 import software.aws.toolkits.eclipse.amazonq.chat.ChatCommunicationManager;
 import software.aws.toolkits.eclipse.amazonq.chat.ChatTheme;
-import software.aws.toolkits.eclipse.amazonq.configuration.PluginStoreKeys;
+import software.aws.toolkits.eclipse.amazonq.configuration.DeprecationAcknowledgmentStore;
 import software.aws.toolkits.eclipse.amazonq.plugin.Activator;
 import software.aws.toolkits.eclipse.amazonq.providers.lsp.LspManagerProvider;
 import software.aws.toolkits.eclipse.amazonq.util.PluginPlatform;
@@ -187,8 +187,8 @@ public final class ChatWebViewAssetProvider extends WebViewAssetProvider {
     }
 
     private String generateJS(final String jsEntrypoint) {
-        var disclaimerAcknowledged = Activator.getPluginStore().get(PluginStoreKeys.CHAT_DISCLAIMER_ACKNOWLEDGED);
-        var pairProgrammingAcknowledged = Activator.getPluginStore().get(PluginStoreKeys.PAIR_PROGRAMMING_ACKNOWLEDGED);
+        var clientConfiguration = ChatClientConfiguration.load(
+                Activator.getPluginStore(), DeprecationAcknowledgmentStore.getInstance());
         return String.format("""
                 <script type="text/javascript" charset="UTF-8" src="%s" defer></script>
                 <script type="text/javascript">
@@ -208,8 +208,7 @@ public final class ChatWebViewAssetProvider extends WebViewAssetProvider {
                                     }
                                 },
                                 {
-                                    disclaimerAcknowledged: %b,
-                                    pairProgrammingAcknowledged: %b,
+                                    %s
                                     agenticMode: true,
                                     modelSelectionEnabled: true,
                                     stringOverrides: { pinContextHint: '' },
@@ -221,8 +220,7 @@ public final class ChatWebViewAssetProvider extends WebViewAssetProvider {
                     window.addEventListener('load', init);
                     %s
                 </script>
-                """, jsEntrypoint, getWaitFunction(), "true".equals(disclaimerAcknowledged), "true".equals(pairProgrammingAcknowledged),
-                getInputFunctions());
+                """, jsEntrypoint, getWaitFunction(), clientConfiguration.toJavaScript(), getInputFunctions());
     }
 
     @SuppressWarnings("MethodLength")
