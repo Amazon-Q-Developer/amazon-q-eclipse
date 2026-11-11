@@ -3,6 +3,7 @@
 
 package software.aws.toolkits.eclipse.amazonq.util;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.atLeast;
@@ -27,6 +28,7 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IEditorInput;
 import org.eclipse.ui.IWorkbenchPart;
 import org.eclipse.ui.IWorkbenchPartReference;
+import org.eclipse.ui.texteditor.IDocumentProvider;
 import org.eclipse.ui.texteditor.ITextEditor;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -149,6 +151,52 @@ public class AutoTriggerPartListenerTest {
         partListener.onShutdown();
         verify(docListenerMock, atLeast(1)).onShutdown();
         verify(docMock, times(removeDocListenerInvocNumber + 1)).removeDocumentListener(docListenerMock);
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @Test
+    void testPartActivateWithNullDocumentProvider() {
+        // Test case: an ITextEditor that returns null from getDocumentProvider() must
+        // be ignored instead of throwing out of the part listener callback
+        AutoTriggerPartListener partListener = new AutoTriggerPartListener(docListenerMock);
+        ITextEditor editorWithoutProvider = mock(ITextEditor.class);
+        when(editorWithoutProvider.getDocumentProvider()).thenReturn(null);
+        IWorkbenchPartReference partRefMock = mock(IWorkbenchPartReference.class);
+        when(partRefMock.getPart(any(Boolean.class))).thenReturn(editorWithoutProvider);
+
+        int addDocListenerInvocNumber = countDocInvocations("addDocumentListener");
+        int removeDocListenerInvocNumber = countDocInvocations("removeDocumentListener");
+
+        assertDoesNotThrow(() -> partListener.partActivated(partRefMock));
+        verify(docMock, times(addDocListenerInvocNumber)).addDocumentListener(docListenerMock);
+
+        // Test case: no active document was recorded, so deactivation is also a no-op
+        assertDoesNotThrow(() -> partListener.partDeactivated(partRefMock));
+        verify(docMock, times(removeDocListenerInvocNumber)).removeDocumentListener(docListenerMock);
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @Test
+    void testPartActivateWithNullDocument() {
+        // Test case: a provider that returns a null document must be ignored rather
+        // than dereferenced when attaching the document listener
+        AutoTriggerPartListener partListener = new AutoTriggerPartListener(docListenerMock);
+        IDocumentProvider providerWithoutDocument = mock(IDocumentProvider.class);
+        when(providerWithoutDocument.getDocument(any())).thenReturn(null);
+        ITextEditor editorWithoutDocument = mock(ITextEditor.class);
+        when(editorWithoutDocument.getDocumentProvider()).thenReturn(providerWithoutDocument);
+        IWorkbenchPartReference partRefMock = mock(IWorkbenchPartReference.class);
+        when(partRefMock.getPart(any(Boolean.class))).thenReturn(editorWithoutDocument);
+
+        int addDocListenerInvocNumber = countDocInvocations("addDocumentListener");
+
+        assertDoesNotThrow(() -> partListener.partActivated(partRefMock));
+        verify(docMock, times(addDocListenerInvocNumber)).addDocumentListener(docListenerMock);
+    }
+
+    private static int countDocInvocations(final String methodName) {
+        return (int) mockingDetails(docMock).getInvocations().stream()
+                .filter(inv -> inv.getMethod().getName().equals(methodName)).count();
     }
 
     static void mockEditor() {

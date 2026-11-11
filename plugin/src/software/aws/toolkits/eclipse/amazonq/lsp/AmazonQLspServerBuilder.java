@@ -58,11 +58,17 @@ public class AmazonQLspServerBuilder extends Builder<AmazonQLspServer> {
         qOptions.put("developerProfiles", true);
         qOptions.put("customizationsWithMetadata", true);
         qOptions.put("mcp", true);
+        // Eclipse has no workspace trust decision, so the language server asks once per folder
+        // before starting local MCP servers there.
+        qOptions.put("workspaceTrust", "prompt");
         qOptions.put("pinnedContextEnabled", true);
         qOptions.put("modelSelection", true);
         awsClientCapabilities.put("q", qOptions);
         Map<String, Object> window = new HashMap<>();
         window.put("showSaveFileDialog", true);
+        // Required. The runtime builds no notification router unless the client asks for one, and
+        // then drops aws/window/showNotification silently -- no error, no log.
+        window.put("notifications", true);
         awsClientCapabilities.put("window", window);
         awsInitOptions.put("awsClientCapabilities", awsClientCapabilities);
         initOptions.put("aws", awsInitOptions);
