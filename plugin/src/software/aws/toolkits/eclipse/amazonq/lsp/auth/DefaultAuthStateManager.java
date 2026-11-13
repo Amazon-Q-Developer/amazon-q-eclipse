@@ -10,7 +10,9 @@ import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.AuthStateType;
 import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.LoginParams;
 import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.LoginType;
 import software.aws.toolkits.eclipse.amazonq.plugin.Activator;
+import software.aws.toolkits.eclipse.amazonq.telemetry.AuthTelemetryProvider;
 import software.aws.toolkits.eclipse.amazonq.util.AuthUtil;
+import software.aws.toolkits.telemetry.TelemetryDefinitions.AuthStatus;
 
 /**
  * Manages authentication state transitions and persistence in the Amazon Q plugin.
@@ -43,6 +45,8 @@ public final class DefaultAuthStateManager implements AuthStateManager {
     private String issuerUrl; // used in AmazonQLspClientImpl.getConnectionMetadata()
     private String ssoTokenId; // used in logout's invalidateSsoToken params
     private AuthState previousAuthState = null;
+    private boolean isRestoringPersistedAuthState = false;
+    private boolean hasEmittedStartupAuthState = false;
 
     public DefaultAuthStateManager(final PluginStore pluginStore) {
         this.authPluginStore = new AuthPluginStore(pluginStore);
@@ -132,6 +136,43 @@ public final class DefaultAuthStateManager implements AuthStateManager {
             }
         }
         previousAuthState = newAuthState;
+
+        emitStartupAuthStateMetric(newAuthState);
+    }
+
+    /**
+     * Reports the authentication state observed at startup, once per plugin session.
+     *
+     * The state restored from the plugin store is optimistic: a stored connection is assumed to still be
+     * valid until the re-authentication performed on start up resolves it. The optimistic state is
+     * therefore skipped and the metric is reported for the state that follows it, which is the outcome
+     * of that re-authentication. A restored logged out state needs no re-authentication and is
+     * definitive right away.
+     *
+     * @param authState the state the plugin transitioned to
+     * @see #syncAuthStateWithPluginStore()
+     * @see DefaultLoginService
+     */
+    private void emitStartupAuthStateMetric(final AuthState authState) {
+        if (hasEmittedStartupAuthState || isRestoringPersistedAuthState) {
+            return;
+        }
+        hasEmittedStartupAuthState = true;
+
+        AuthTelemetryProvider.emitUserStateOnStartupMetric(toAuthStatus(authState.authStateType()), authState.issuerUrl());
+    }
+
+    private static AuthStatus toAuthStatus(final AuthStateType authStateType) {
+        switch (authStateType) {
+        case LOGGED_IN:
+            return AuthStatus.CONNECTED;
+        case EXPIRED:
+            return AuthStatus.EXPIRED;
+        case LOGGED_OUT:
+            return AuthStatus.NOT_CONNECTED;
+        default:
+            return AuthStatus.UNKNOWN;
+        }
     }
 
     private void syncAuthStateWithPluginStore() {
@@ -162,10 +203,18 @@ public final class DefaultAuthStateManager implements AuthStateManager {
          *
          * @see DefaultLoginService constructor that handles the re-authentication on LoginService start up
          */
+        boolean restoreFailed = false;
         try {
+            isRestoringPersistedAuthState = true;
             toLoggedIn(loginType, loginParams, ssoTokenId);
         } catch (Exception ex) {
             Activator.getLogger().error("Failed to transition to a logged in state after syncing auth state with the persistent store", ex);
+            restoreFailed = true;
+        } finally {
+            isRestoringPersistedAuthState = false;
+        }
+
+        if (restoreFailed) {
             toLoggedOut();
         }
     }

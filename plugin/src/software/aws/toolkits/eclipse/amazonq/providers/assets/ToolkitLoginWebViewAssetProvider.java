@@ -16,6 +16,7 @@ import org.eclipse.swt.browser.BrowserFunction;
 
 import software.aws.toolkits.eclipse.amazonq.broker.events.ToolkitLoginWebViewAssetState;
 import software.aws.toolkits.eclipse.amazonq.plugin.Activator;
+import software.aws.toolkits.eclipse.amazonq.telemetry.ToolkitTelemetryProvider;
 import software.aws.toolkits.eclipse.amazonq.telemetry.UiTelemetryProvider;
 import software.aws.toolkits.eclipse.amazonq.util.PluginUtils;
 import software.aws.toolkits.eclipse.amazonq.util.ThemeDetector;
@@ -26,8 +27,12 @@ import software.aws.toolkits.eclipse.amazonq.views.LoginViewCommandParser;
 import software.aws.toolkits.eclipse.amazonq.views.ViewActionHandler;
 import software.aws.toolkits.eclipse.amazonq.views.ViewCommandParser;
 import software.aws.toolkits.eclipse.amazonq.views.ViewConstants;
+import software.aws.toolkits.telemetry.TelemetryDefinitions.Result;
 
 public final class ToolkitLoginWebViewAssetProvider extends WebViewAssetProvider {
+
+    private static final String DEPENDENCY_MISSING_REASON = "DependencyMissing";
+    private static final String ASSET_LOAD_FAILED_REASON = "AssetLoadFailed";
 
     private WebviewAssetServer webviewAssetServer;
     private static final ThemeDetector THEME_DETECTOR = new ThemeDetector();
@@ -47,6 +52,10 @@ public final class ToolkitLoginWebViewAssetProvider extends WebViewAssetProvider
         if (content.isEmpty()) {
             ThreadingUtils.executeAsyncTask(() -> {
                 content = resolveContent();
+                if (content.isEmpty()) {
+                    ToolkitTelemetryProvider.emitDidLoadModuleEventMetric(ToolkitTelemetryProvider.LOGIN_MODULE,
+                            Result.FAILED, DEPENDENCY_MISSING_REASON);
+                }
                 Activator.getEventBroker().post(ToolkitLoginWebViewAssetState.class,
                         content.isPresent() ? ToolkitLoginWebViewAssetState.RESOLVED
                                 : ToolkitLoginWebViewAssetState.DEPENDENCY_MISSING);
@@ -93,6 +102,8 @@ public final class ToolkitLoginWebViewAssetProvider extends WebViewAssetProvider
             webviewAssetServer = new WebviewAssetServer();
             var result = webviewAssetServer.resolve(jsDirectoryPath);
             if (!result) {
+                ToolkitTelemetryProvider.emitDidLoadModuleEventMetric(ToolkitTelemetryProvider.LOGIN_MODULE,
+                        Result.FAILED, ASSET_LOAD_FAILED_REASON);
                 return Optional.of("Failed to load JS");
             }
             var loginJsPath = webviewAssetServer.getUri() + "getStart.js";
@@ -146,6 +157,8 @@ public final class ToolkitLoginWebViewAssetProvider extends WebViewAssetProvider
                             """,
                     loginJsPath, loginJsPath, loginJsPath, getWaitFunction(), isDarkTheme));
         } catch (IOException e) {
+            ToolkitTelemetryProvider.emitDidLoadModuleEventMetric(ToolkitTelemetryProvider.LOGIN_MODULE,
+                    Result.FAILED, DEPENDENCY_MISSING_REASON);
             return Optional.of("Failed to load JS");
         }
     }

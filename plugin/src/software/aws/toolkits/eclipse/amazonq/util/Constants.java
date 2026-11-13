@@ -32,6 +32,8 @@ public final class Constants {
     public static final String DEFAULT_Q_FOUNDATION_DISPLAY_NAME = "Amazon Q foundation (Default)";
     public static final String LOGIN_TYPE_KEY = "LOGIN_TYPE";
     public static final String LOGIN_IDC_PARAMS_KEY = "IDC_PARAMS";
+    public static final String LOGIN_TIMESTAMP_KEY = "LOGIN_TIMESTAMP";
+    public static final String LOGIN_TIMESTAMP_START_URL_KEY = "LOGIN_TIMESTAMP_START_URL";
     public static final String SSO_TOKEN_ID = "SSO_TOKEN_IN";
     public static final String AWS_BUILDER_ID_URL = "https://view.awsapps.com/start";
     public static final String IDC_PROFILE_NAME = "eclipse-q-profile";

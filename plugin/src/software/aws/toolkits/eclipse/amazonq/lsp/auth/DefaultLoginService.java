@@ -3,8 +3,11 @@
 
 package software.aws.toolkits.eclipse.amazonq.lsp.auth;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import software.aws.toolkits.eclipse.amazonq.configuration.PluginStore;
@@ -18,7 +21,11 @@ import software.aws.toolkits.eclipse.amazonq.lsp.auth.model.LoginType;
 import software.aws.toolkits.eclipse.amazonq.lsp.model.UpdateCredentialsPayload;
 import software.aws.toolkits.eclipse.amazonq.plugin.Activator;
 import software.aws.toolkits.eclipse.amazonq.providers.lsp.LspProvider;
+import software.aws.toolkits.eclipse.amazonq.telemetry.AwsTelemetryProvider;
+import software.aws.toolkits.eclipse.amazonq.telemetry.AwsTelemetryProvider.BrowserLoginParams;
 import software.aws.toolkits.eclipse.amazonq.util.AuthUtil;
+import software.aws.toolkits.telemetry.TelemetryDefinitions.CredentialType;
+import software.aws.toolkits.telemetry.TelemetryDefinitions.Result;
 
 /**
  * Core authentication service for the Amazon Q Eclipse plugin that manages
@@ -41,11 +48,13 @@ public final class DefaultLoginService implements LoginService {
     private AuthStateManager authStateManager;
     private AuthTokenService authTokenService;
     private AuthCredentialsService authCredentialsService;
+    private AuthPluginStore authPluginStore;
 
     private DefaultLoginService(final Builder builder) {
         this.authStateManager = Objects.requireNonNull(builder.authStateManager, "authStateManager cannot be null");
         this.authTokenService = Objects.requireNonNull(builder.authTokenService, "authTokenService cannot be null");
         this.authCredentialsService = Objects.requireNonNull(builder.authCredentialsService, "authCredentialsService cannot be null");
+        this.authPluginStore = new AuthPluginStore(Objects.requireNonNull(builder.pluginStore, "pluginStore cannot be null"));
 
         if (builder.initializeOnStartUp) {
             AuthState authState = authStateManager.getAuthState();
@@ -73,7 +82,7 @@ public final class DefaultLoginService implements LoginService {
 
         Activator.getLogger().info("Attempting to login...");
 
-        return processLogin(loginType, loginParams, true)
+        return processLogin(loginType, loginParams, true, false)
                 .exceptionally(throwable -> {
                     Activator.getLogger().error("Failed to log in", throwable);
                     logout();
@@ -141,7 +150,7 @@ public final class DefaultLoginService implements LoginService {
 
         Activator.getLogger().info("Attempting to re-authenticate...");
 
-        return processLogin(authState.loginType(), authState.loginParams(), loginOnInvalidToken)
+        return processLogin(authState.loginType(), authState.loginParams(), loginOnInvalidToken, true)
                 .exceptionally(throwable -> {
                     Activator.getLogger().error("Failed to re-authenticate", throwable);
                     logout();
@@ -154,7 +163,8 @@ public final class DefaultLoginService implements LoginService {
         return authStateManager.getAuthState();
     }
 
-    CompletableFuture<Void> processLogin(final LoginType loginType, final LoginParams loginParams, final boolean loginOnInvalidToken) {
+    CompletableFuture<Void> processLogin(final LoginType loginType, final LoginParams loginParams, final boolean loginOnInvalidToken,
+            final boolean isReAuth) {
         AuthUtil.validateLoginParameters(loginType, loginParams);
 
         final AtomicReference<String> ssoTokenId = new AtomicReference<>(); // Saved for logout
@@ -172,12 +182,73 @@ public final class DefaultLoginService implements LoginService {
                 })
                 .thenRun(() -> {
                     authStateManager.toLoggedIn(loginType, loginParams, ssoTokenId.get());
+                    if (loginOnInvalidToken) {
+                        emitBrowserLoginMetric(loginType, loginParams, isReAuth, Result.SUCCEEDED, null);
+                    }
                     Activator.getLogger().info("Successfully logged in");
+                })
+                /*
+                 * Reports the outcome of the login itself. The steps that follow are not part of the login,
+                 * so they are wired after this stage to keep them out of the metric.
+                 *
+                 * Only logins that were allowed to open the browser are reported. The re-authentication
+                 * performed on start up passes loginOnInvalidToken=false, it refreshes the cached token
+                 * silently and would otherwise report a browser login (and a session duration) on every
+                 * start of the IDE.
+                 */
+                .whenComplete((unused, throwable) -> {
+                    if (throwable != null && loginOnInvalidToken) {
+                        emitBrowserLoginMetric(loginType, loginParams, isReAuth, Result.FAILED, getReasonCode(throwable));
+                    }
                 }).thenRun(() -> {
                     CustomizationUtil.triggerChangeConfigurationNotification();
                 }).exceptionally(throwable -> {
                     throw new AmazonQPluginException("Failed to process log in", throwable);
                 });
+    }
+
+    /**
+     * Emits the browser login metric, reporting how long the previous authentication session for the
+     * same start url lived for.
+     *
+     * The session duration is only known once a login has been recorded for that start url, so it is
+     * left out of the first login and of the first login that follows a sign out, which clears the
+     * recorded login. A successful login becomes the new reference point for the next one.
+     *
+     * @param loginType the type of connection being authenticated
+     * @param loginParams the parameters of the connection being authenticated
+     * @param isReAuth whether the login renews an existing connection
+     * @param result whether the login succeeded
+     * @param reason a short reason code when the login failed, null otherwise
+     */
+    private void emitBrowserLoginMetric(final LoginType loginType, final LoginParams loginParams, final boolean isReAuth,
+            final Result result, final String reason) {
+        String credentialStartUrl = AuthUtil.getIssuerUrl(loginType, loginParams);
+
+        // The start url identifies the authentication session, a metric without it carries no signal.
+        if (credentialStartUrl == null || credentialStartUrl.isBlank()) {
+            return;
+        }
+
+        Long sessionDuration = null;
+        if (result == Result.SUCCEEDED) {
+            Instant loginInstant = Instant.now();
+            sessionDuration = authPluginStore.getLoginTimestamp(credentialStartUrl)
+                    .map(previousLogin -> Duration.between(previousLogin, loginInstant).toMillis())
+                    .filter(duration -> duration >= 0) // guards against a recorded login dated in the future
+                    .orElse(null);
+            authPluginStore.setLoginTimestamp(credentialStartUrl, loginInstant);
+        }
+
+        AwsTelemetryProvider.emitLoginWithBrowserEvent(new BrowserLoginParams(credentialStartUrl,
+                CredentialType.BEARER_TOKEN, isReAuth, result, reason, sessionDuration));
+    }
+
+    private static String getReasonCode(final Throwable throwable) {
+        Throwable cause = throwable instanceof CompletionException && throwable.getCause() != null
+                ? throwable.getCause()
+                : throwable;
+        return cause.getClass().getSimpleName();
     }
 
     public static class Builder {
